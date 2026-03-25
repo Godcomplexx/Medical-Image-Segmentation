@@ -1,0 +1,209 @@
+services:
+  # === Authorization service ===
+#  auth_service:
+#    build: ./auth_service
+#    ports:
+#      - "8002:8002"
+#    environment:
+#      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@database/postgres
+#      - REDIS_URL=redis://redis:6379/0
+#      - JWT_SECRET=supersecret
+  # === API сервис ===
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: api_container
+    volumes:
+      - ./api:/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:3110@postgres:5432/patient
+      - FILESTORAGE_SERVICE_BASE_URL=http://math_app:8003
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+    networks:
+      - appnet
+      - nginx-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # === Frontend (Vite React) ===
+  front:
+    build:
+      context: ./front
+      dockerfile: Dockerfile
+    volumes:
+      - ./front:/app
+      - /app/node_modules
+    networks:
+      - nginx-network
+    restart: unless-stopped
+
+  # === Math App и FastSurfer ===
+  math_app:
+    build: ./math_app
+    volumes:
+      - ./math_app/fileStorage:/math_app/fileStorage
+      - ./math_app/logs:/math_app/logs
+    depends_on:
+      - fastsurfer
+    networks:
+      - appnet
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+
+  fastsurfer:
+    build: ./fastsurfer
+    volumes:
+      - ./math_app/fileStorage:/fileStorage
+    networks:
+      - appnet
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
+    ports:
+      - "8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # === База данных и pgAdmin ===
+  postgres:
+    image: postgres:alpine
+    container_name: postgres_container
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 3110
+      POSTGRES_DB: patient
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - appnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d patient"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_container
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - appnet
+
+  # === RabbitMQ и Celery Workers ===
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-guest}
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - ./mq/config/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+#      - ./mq/config/advanced.config:/etc/rabbitmq/advanced.config:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - mq_network
+      - appnet
+
+  math_worker:
+    build:
+      context: ./mq
+      dockerfile: workers/Dockerfile
+    command: celery -A workers.celery_app worker -Q math_tasks,celery --concurrency=${MATH_WORKER_CONCURRENCY:-3}
+    environment:
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: rpc://
+      MATH_APP_URL: http://math_app:8003
+    volumes:
+      - ./data:/app/data
+    networks:
+      - mq_network
+      - appnet
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db_worker:
+    build:
+      context: ./mq
+      dockerfile: workers/Dockerfile
+    command: celery -A workers.celery_app worker -Q db_tasks,celery --concurrency=1
+    environment:
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: rpc://
+    volumes:
+      - ./data:/app/data
+    networks:
+      - mq_network
+      - appnet
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  flower:
+    image: mher/flower
+    environment:
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+    ports:
+      - "5555:5555"
+    networks:
+      - mq_network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # === Nginx (обратный прокси) ===
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/includes:/etc/nginx/includes
+    restart: unless-stopped
+    networks:
+      - nginx-network
+    depends_on:
+      - front
+      - api
+
+# === Тома ===
+volumes:
+  postgres_data:
+
+# === Сети ===
+networks:
+  appnet:
+    driver: bridge
+  mq_network:
+    driver: bridge
+  nginx-network:
+    driver: bridge

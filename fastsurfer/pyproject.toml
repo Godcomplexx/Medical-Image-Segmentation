@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "fastsurfer_api"
+version = "0.1.0"
+description = "FastAPI сервис для запуска FastSurfer сегментации"
+authors = ["Segmentation"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "*"
+uvicorn = "*"
+python-multipart = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api" 

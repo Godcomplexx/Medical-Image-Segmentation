@@ -1,0 +1,9 @@
+names:
+- '0'
+- '1'
+- '2'
+- '3'
+- '4'
+path: C:\Users\NinanoD\PycharmProjects\Segmentation_service\finetune\fileStorage\train_set
+train: C:\Users\NinanoD\PycharmProjects\Segmentation_service\finetune\fileStorage\train_set\images\finetune
+val: C:\Users\NinanoD\PycharmProjects\Segmentation_service\finetune\fileStorage\train_set\images\val

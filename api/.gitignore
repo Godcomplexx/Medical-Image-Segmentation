@@ -1,0 +1,10 @@
+# Python кэш-файлы
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.py[cod]
+*$py.classs

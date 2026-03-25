@@ -1,0 +1,51 @@
+# Python кэш-файлы
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.py[cod]
+*$py.class
+.mypy_cache/
+
+# Виртуальное окружение
+venv/
+env/
+.venv/
+.env
+
+# Mypy
+.mypy_cache/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+
+# Docker
+docker-compose.override.yml
+
+# Логи
+*.log
+BrainShockAlert/logs/
+
+# IDE
+.idea/
+.vscode/
+
+# ОС
+.DS_Store
+Thumbs.db
+
+# Node.js
+node_modules/
+
+# Локальные данные и временные файлы
+data/
+celerybeat-schedule
+celerybeat.pid

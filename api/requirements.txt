@@ -1,0 +1,16 @@
+sqlalchemy==2.0.23
+asyncpg
+anyio==4.0.0
+asgiref==3.7.2
+alembic==1.13.1
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+python-multipart==0.0.6
+fastapi
+uvicorn[standard]>=0.24.0
+pydantic[standard]
+pydantic[email]
+httpx
+celery[rabbitmq]>=5.3.0
+passlib[bcrypt]
+python-multipart

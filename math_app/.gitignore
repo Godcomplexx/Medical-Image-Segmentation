@@ -1,0 +1,12 @@
+/.idea
+/.database
+/.tests
+/.venv
+/.myenv
+/.wheels
+/.yolo_config
+__pycache__/
+*.pyc
+
+fileStorage/input_data/*
+!fileStorage/input_data/.gitkeep
