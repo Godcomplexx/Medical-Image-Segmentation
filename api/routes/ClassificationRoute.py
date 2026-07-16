@@ -5,8 +5,9 @@ import uuid
 from typing import List
 
 from db.db import get_db
-from models.models import Classification as ClassificationModel
+from models.models import Classification as ClassificationModel, User as UserModel
 from schemas.schemas import ClassificationSchema, Classification
+from security import get_current_user
 
 router = APIRouter(
     prefix="/classifications",
@@ -17,7 +18,8 @@ router = APIRouter(
 @router.post("/", response_model=Classification)
 async def create_classification(
         classification: ClassificationSchema,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Создает новую классификацию.
@@ -78,7 +80,8 @@ async def read_classification(
 async def update_classification(
         classification_id: uuid.UUID,
         classification: ClassificationSchema,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Обновляет существующую классификацию.
@@ -110,7 +113,8 @@ async def update_classification(
 @router.delete("/{classification_id}")
 async def delete_classification(
         classification_id: uuid.UUID,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Удаляет классификацию по её ID.

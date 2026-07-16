@@ -1,16 +1,18 @@
-sqlalchemy==2.0.23
-asyncpg
-anyio==4.0.0
+# Зафиксированные версии для воспроизводимой сборки.
+# Набор согласован (проверен совместный импорт); сборку валидирует CI (docker build).
+sqlalchemy==2.0.50
+asyncpg==0.31.0
+anyio==4.10.0
 asgiref==3.7.2
-alembic==1.13.1
-psycopg2-binary==2.9.9
-python-dotenv==1.0.0
-python-multipart==0.0.6
-fastapi
-uvicorn[standard]>=0.24.0
-pydantic[standard]
-pydantic[email]
-httpx
-celery[rabbitmq]>=5.3.0
-passlib[bcrypt]
-python-multipart
+alembic==1.18.4
+psycopg2-binary==2.9.10
+python-dotenv==1.1.1
+python-multipart==0.0.9
+fastapi==0.136.3
+uvicorn[standard]==0.40.0
+pydantic[email]==2.11.7
+httpx==0.28.1
+celery==5.3.6
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+PyJWT==2.8.0

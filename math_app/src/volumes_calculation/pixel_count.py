@@ -93,10 +93,10 @@ def count_colors_in_masks(
 
     mask_paths = list(mask_dir.glob('*.png'))
     transpose_dict = {
-        1: 'I',
-        2: 'P',
-        3: 'S',
-        4: 'U',
+        0: 'I',
+        1: 'P',
+        2: 'S',
+        3: 'U',
     }
     for mask_path in mask_paths:
         slice_number = extract_slice_number(mask_path.name)

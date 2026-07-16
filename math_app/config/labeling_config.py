@@ -4,6 +4,7 @@ from typing import Dict, Tuple
 
 class Labeling(BaseSettings):
     # Mapping from color string to YOLO class IDs
+    # nc=5 схема (совместима с best.pt и math_app): I=1, P=2, S=3, U=4; класс 0 не используется.
     color_to_class: Dict[str, int] = {
         '25500': 1,
         '02550': 2,

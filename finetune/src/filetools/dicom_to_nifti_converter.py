@@ -1,14 +1,81 @@
 from pathlib import Path
+import logging
+import os
 import shutil
+import tempfile
 import dicom2nifti
+import dicom2nifti.settings as dicom2nifti_settings
 import numpy as np
 import pydicom
 from pydicom import FileDataset
-from pydicom.dicomdir import DicomDir
+try:
+    # DicomDir удалён в pydicom >= 3.0; используется только в аннотации типа.
+    from pydicom.dicomdir import DicomDir
+except ImportError:  # pragma: no cover
+    DicomDir = None
 from pydicom.errors import InvalidDicomError
 from typing import Callable, Optional, Union
 from finetune.config.logs_config import *
 from dicom2nifti.exceptions import ConversionValidationError
+
+
+class DicomConversionError(RuntimeError):
+    """Raised when a DICOM study cannot be converted without data loss."""
+
+
+class _Dicom2NiftiFailureHandler(logging.Handler):
+    """Collect failures that dicom2nifti logs instead of raising."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self.failures: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if message.startswith(("Unable to read:", "Unable to convert:")):
+            self.failures.append(message)
+
+
+def configure_gdcmconv() -> None:
+    """Use the real GDCM executable bundled by python-gdcm on Windows.
+
+    The console wrapper installed in ``Scripts/gdcmconv`` has no ``.exe``
+    suffix and cannot be launched by CreateProcess (WinError 193).
+    """
+    if os.name != "nt":
+        return
+    try:
+        import _gdcm
+    except ImportError:
+        return
+
+    executable = Path(_gdcm.__file__).resolve().parent / "gdcmconv.exe"
+    if executable.is_file():
+        dicom2nifti_settings.gdcmconv_path = str(executable)
+
+
+configure_gdcmconv()
+
+
+def _ascii_staging_root() -> Path:
+    """Return a case-independent ASCII directory suitable for Windows GDCM."""
+    configured_root = os.getenv("FINETUNE_DICOM_TEMP")
+    root = (
+        Path(configured_root).expanduser()
+        if configured_root
+        else settings.database_path / "_conversion_temp"
+    ).resolve()
+
+    try:
+        str(root).encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise DicomConversionError(
+            "GDCM requires an ASCII-only temporary path on Windows. "
+            "Set FINETUNE_DICOM_TEMP to a writable ASCII-only directory."
+        ) from exc
+
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def process_dicom_to_nifti(
@@ -19,44 +86,94 @@ def process_dicom_to_nifti(
 ) -> None:
     logger_processing_manager.info(f"Starting DICOM-to-NIfTI conversion from {dicom_source}")
 
-    dicom_temp_dir.mkdir(parents=True, exist_ok=True)
+    # The legacy temporary path is nested under the case name. Do not pass it
+    # to GDCM because Windows GDCM cannot reliably open paths with Cyrillic or
+    # other non-ASCII characters.
+    staging_root = _ascii_staging_root()
+    if dicom_temp_dir.exists():
+        shutil.rmtree(dicom_temp_dir, ignore_errors=True)
+
+    if nifti_output_dir.exists():
+        shutil.rmtree(nifti_output_dir)
     nifti_output_dir.mkdir(parents=True, exist_ok=True)
 
-    for file_path in dicom_source.rglob('*'):
-        if not file_path.is_file():
-            continue
-
-        try:
-            dicom_content: Union[FileDataset, DicomDir] = pydicom.dcmread(file_path)
-
-            if filter_func is None or filter_func(dicom_content):
-                shutil.copy(file_path, dicom_temp_dir / file_path.name)
-                logger_processing_manager.debug(f"Copied: {file_path.name}")
-
-        except pydicom.errors.InvalidDicomError:
-            logger_processing_manager.warning(f"Invalid DICOM file: {file_path.name}")
-        except Exception as e:
-            logger_processing_manager.error(f"Failed to read {file_path.name}: {str(e)}")
+    failure_handler = _Dicom2NiftiFailureHandler()
+    dicom2nifti_logger = logging.getLogger("dicom2nifti.convert_dir")
+    previous_dicom2nifti_level = dicom2nifti_logger.level
+    previous_dicom2nifti_disabled = dicom2nifti_logger.disabled
+    copied_files = 0
 
     try:
-        if any(dicom_temp_dir.iterdir()):
+        with tempfile.TemporaryDirectory(prefix="dicom_", dir=staging_root) as temp_dir:
+            ascii_temp_dir = Path(temp_dir)
+
+            for file_path in dicom_source.rglob('*'):
+                if not file_path.is_file():
+                    continue
+                if any(parent.name.casefold() == "markups" for parent in file_path.parents):
+                    continue
+
+                try:
+                    dicom_content: Union[FileDataset, DicomDir] = pydicom.dcmread(file_path)
+
+                    if filter_func is None or filter_func(dicom_content):
+                        # Numeric names prevent both Unicode issues and basename
+                        # collisions between nested DICOM directories.
+                        staged_path = ascii_temp_dir / f"{copied_files:08d}.dcm"
+                        shutil.copy2(file_path, staged_path)
+                        copied_files += 1
+                        logger_processing_manager.debug(f"Copied: {file_path.name}")
+
+                except InvalidDicomError:
+                    logger_processing_manager.debug(f"Skipped non-DICOM file: {file_path.name}")
+                except Exception as exc:
+                    raise DicomConversionError(
+                        f"Failed to read DICOM file {file_path.name}: {exc}"
+                    ) from exc
+
+            if copied_files == 0:
+                raise DicomConversionError(
+                    f"No DICOM files matched the requested series in {dicom_source}"
+                )
+
+            dicom2nifti_logger.setLevel(logging.INFO)
+            dicom2nifti_logger.disabled = False
+            dicom2nifti_logger.addHandler(failure_handler)
             dicom2nifti.convert_directory(
-                str(dicom_temp_dir),
+                str(ascii_temp_dir),
                 str(nifti_output_dir),
                 compression=True,
                 reorient=True
             )
-            logger_processing_manager.info(f"Conversion successful, NIfTI files saved in {nifti_output_dir}")
-        else:
-            logger_processing_manager.warning(f"No DICOM files found for conversion in {dicom_source}")
-    except ConversionValidationError as e:
-        logger_processing_manager.warning(f"Skipped conversion: {e}")
-    except Exception as e:
-        logger_processing_manager.error(f"Conversion failed: {str(e)}")
+
+            if failure_handler.failures:
+                details = "; ".join(failure_handler.failures[:3])
+                raise DicomConversionError(
+                    f"dicom2nifti reported partial conversion failure: {details}"
+                )
+
+            nifti_files = list(nifti_output_dir.glob("*.nii")) + list(
+                nifti_output_dir.glob("*.nii.gz")
+            )
+            if not nifti_files:
+                raise DicomConversionError(
+                    "DICOM conversion produced no NIfTI files"
+                )
+
+            logger_processing_manager.info(
+                f"Conversion successful, NIfTI files saved in {nifti_output_dir}"
+            )
+    except (ConversionValidationError, DicomConversionError) as exc:
+        logger_processing_manager.error(f"Conversion failed: {exc}")
+        raise
+    except Exception as exc:
+        logger_processing_manager.error(f"Conversion failed: {exc}")
+        raise DicomConversionError(f"DICOM conversion failed: {exc}") from exc
     finally:
-        if dicom_temp_dir.exists():
-            shutil.rmtree(dicom_temp_dir, ignore_errors=True)
-            logger_processing_manager.info(f"Temporary DICOM files removed from {dicom_temp_dir}")
+        dicom2nifti_logger.removeHandler(failure_handler)
+        dicom2nifti_logger.setLevel(previous_dicom2nifti_level)
+        dicom2nifti_logger.disabled = previous_dicom2nifti_disabled
+        logger_processing_manager.info("Temporary DICOM files removed")
 
 
 def dicom_orientation_ok(orientation) -> bool:
@@ -88,20 +205,42 @@ def t1_filter(dicom_content: FileDataset) -> bool:
 
 def t2_filter(dicom_content: FileDataset) -> bool:
     """
-    Filter function for T2 FLAIR images.
+    Отбор аксиальных T2/FLAIR-серий для YOLO-датасета.
+
+    Аксиальность проверяется по ImageOrientationPatient, а НЕ по тексту описания
+    (прежний фильтр требовал слово ``t2`` в SeriesDescription и отбрасывал серии,
+    названные просто ``FLAIR``).
+
+    Принимаются:
+    - аксиальный FLAIR (``flair``/``fluid`` в описании либо ``IR`` в ScanningSequence) —
+      берётся целиком;
+    - серии ``DUAL_TSE`` — только T2-эхо (``EchoTime >= 70`` мс). Дуальное эхо хранит
+      PD- и T2-изображения в одной серии (один SeriesInstanceUID) на одинаковых позициях
+      срезов; без фильтра по эху dicom2nifti получает по два изображения на позицию и
+      падает на несогласованном объёме.
     """
     try:
         orientation = np.round(dicom_content.ImageOrientationPatient)
-        desc = dicom_content.SeriesDescription.lower()
-
-        orientation_ok = dicom_orientation_ok(orientation)
-        mode_ok = ('flair' in desc or 'fluid' in desc or 'IR' in dicom_content.ScanningSequence)
-        tra_ok = 't2' in desc
-
-        return mode_ok and (orientation_ok and tra_ok)
     except AttributeError:
-        logger_main.warning("Missing attribute in DICOM file while filtering T2.")
+        logger_main.warning("Missing ImageOrientationPatient in DICOM file while filtering T2.")
         return False
+
+    if not dicom_orientation_ok(orientation):
+        return False
+
+    desc = (getattr(dicom_content, "SeriesDescription", "") or "").lower()
+    scanning_seq = getattr(dicom_content, "ScanningSequence", "") or ""
+
+    is_flair = "flair" in desc or "fluid" in desc or "IR" in scanning_seq
+
+    # DUAL_TSE: оставляем только длинноэховые (T2) срезы.
+    try:
+        echo_time = float(getattr(dicom_content, "EchoTime", 0) or 0)
+    except (TypeError, ValueError):
+        echo_time = 0.0
+    is_dual_tse_t2 = ("dual" in desc) and (echo_time >= 70)
+
+    return is_flair or is_dual_tse_t2
 
 
 def create_nifti_series(
@@ -136,7 +275,7 @@ def create_nifti_series(
 
     except Exception as e:
         logger_main.error(f"Failed to list folders: {e}")
-        return
+        raise
 
     for folder in target_folders:
         logger_main.info(f"Processing folder: {folder.name}")
@@ -164,6 +303,7 @@ def create_nifti_series(
             logger_main.info(f"Successfully processed: {folder.name}")
         except Exception as e:
             logger_main.error(f"Error while processing folder {folder.name}: {e}")
+            raise
 
 
 def create_t1_nifti(

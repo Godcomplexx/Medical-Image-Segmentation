@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import select, cast, String
+from sqlalchemy import select, update, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,7 @@ from models.models import (
 )
 from schemas.schemas import ResearchCreateSchema
 from . import crud_status, crud_patient
+from constants import InvalidStatusTransition, validate_status_transition
 
 
 async def get_research(db: AsyncSession, research_id: uuid.UUID) -> ResearchModel | None:
@@ -109,11 +110,46 @@ async def create_research(db: AsyncSession, research_data: ResearchCreateSchema,
 
 async def update_research_status(db: AsyncSession, research: ResearchModel, status: StatusModel) -> ResearchModel:
     """Обновляет только статус существующего проекта."""
-    research.status_id = status.id
+    if research.status is not None:
+        validate_status_transition(research.status.status_name, status.status_name)
+    result = await db.execute(
+        update(ResearchModel)
+        .where(
+            ResearchModel.id == research.id,
+            ResearchModel.status_id == research.status_id,
+        )
+        .values(status_id=status.id, error_message=None)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise InvalidStatusTransition(
+            "Research status changed concurrently; transition was not applied."
+        )
     await db.commit()
-    await db.refresh(research)
+    return await get_research(db, research.id)
 
-    # Возвращаем обновленный проект
+
+async def set_research_failed(db: AsyncSession, research: ResearchModel, status: StatusModel, error_message: str | None) -> ResearchModel:
+    """Переводит исследование в статус "Ошибка" и сохраняет текст ошибки."""
+    if research.status is not None:
+        validate_status_transition(research.status.status_name, status.status_name)
+    result = await db.execute(
+        update(ResearchModel)
+        .where(
+            ResearchModel.id == research.id,
+            ResearchModel.status_id == research.status_id,
+        )
+        .values(
+            status_id=status.id,
+            error_message=(error_message or "")[:2000],
+        )
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise InvalidStatusTransition(
+            "Research status changed concurrently; failure state was not applied."
+        )
+    await db.commit()
     return await get_research(db, research.id)
 
 

@@ -1,0 +1,14 @@
+# Уменьшаем build-контекст (api и nginx собираются из корня репозитория).
+# Перечислены только пути, которые никогда не COPY-ятся в образы.
+.git
+.github
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+**/node_modules/
+.venv/
+venv/
+env/
+*.log

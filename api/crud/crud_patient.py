@@ -1,9 +1,21 @@
 import uuid
 import random
 from typing import List
-from sqlalchemy import select
+from sqlalchemy import select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.models import Patient as PatientModel
+from models.models import Patient as PatientModel, Research as ResearchModel
+
+
+async def user_owns_patient(db: AsyncSession, user_id: uuid.UUID, patient_id: uuid.UUID) -> bool:
+    """Пользователь "владеет" пациентом, если у него есть исследование этого пациента."""
+    stmt = select(
+        exists().where(
+            ResearchModel.patient_id == patient_id,
+            ResearchModel.user_id == user_id,
+        )
+    )
+    result = await db.execute(stmt)
+    return bool(result.scalar())
 
 def generate_patient_code():
     number = random.randint(0, 99999)
@@ -23,6 +35,17 @@ async def get_patient_by_id(db: AsyncSession, patient_id: uuid.UUID) -> PatientM
 async def get_patients(db: AsyncSession) -> List[PatientModel]:
     """Возвращает список всех пациентов."""
     result = await db.execute(select(PatientModel))
+    return result.scalars().all()
+
+
+async def get_patients_for_user(db: AsyncSession, user_id: uuid.UUID) -> List[PatientModel]:
+    """Возвращает только тех пациентов, у которых есть исследования данного пользователя."""
+    result = await db.execute(
+        select(PatientModel)
+        .join(ResearchModel, ResearchModel.patient_id == PatientModel.id)
+        .where(ResearchModel.user_id == user_id)
+        .distinct()
+    )
     return result.scalars().all()
 
 

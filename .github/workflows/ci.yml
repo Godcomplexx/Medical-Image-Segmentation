@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api-tests:
+    name: API tests (pytest)
+    runs-on: ubuntu-latest
+    env:
+      # Детерминированный прогон: не подгружаем сторонние pytest-плагины из окружения.
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      JWT_SECRET_KEY: test-secret-key
+      INTERNAL_API_TOKEN: test-internal-token
+      DATABASE_URL: postgresql+asyncpg://u:p@localhost:5432/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies (locked set, как в образе)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r api/requirements.lock pytest
+      - name: Run API tests
+        run: pytest api/tests -q
+
+  math-app-tests:
+    name: math_app tests (pytest)
+    runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install minimal deps (safe_paths only needs fastapi)
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi pytest
+      - name: Run math_app tests
+        run: pytest math_app/tests -q
+
+  mq-tests:
+    name: Celery task tests (pytest)
+    runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      INTERNAL_API_TOKEN: test-internal-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install worker test dependencies
+        run: pip install "celery[rabbitmq]>=5.3,<6.0" "requests>=2.31,<3" pytest
+      - name: Run Celery task tests
+        run: pytest mq/tests -q
+
+  frontend-build:
+    name: Frontend build (Vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - name: Install and build
+        working-directory: front
+        run: |
+          npm ci
+          npm run build
+
+  compose-build:
+    name: Validate compose + build API image
+    runs-on: ubuntu-latest
+    env:
+      # Значения только для CI — реальные секреты задаются через .env в проде.
+      POSTGRES_PASSWORD: ci-postgres
+      PGADMIN_PASSWORD: ci-pgadmin
+      JWT_SECRET_KEY: ci-jwt-secret
+      INTERNAL_API_TOKEN: ci-internal-token
+      RABBITMQ_USER: ci-rabbit-user
+      RABBITMQ_PASS: ci-rabbit-password
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose config
+        run: docker compose config >/dev/null
+      - name: Build application images
+        run: docker compose build api front math_worker db_worker

@@ -21,10 +21,10 @@ transpose_dict = {
     4 : 'U',
 }
 transpose_dict_ = {
-    'I' : 1,
-    'P' : 2,
-    'S' : 3,
-    'U' : 4,
+    'I' : 0,
+    'P' : 1,
+    'S' : 2,
+    'U' : 3,
 }
 def example_case(
     path_to_image: Path,
@@ -79,7 +79,9 @@ def example_case(
                 if mask is not None:
                     mask = cv2.resize(mask.astype(np.uint8), (w, h))
 
-                    label_map[mask > 127] = class_name
+                    # The model uses zero-based IDs, while zero in the
+                    # semantic volume is reserved for background.
+                    label_map[mask > 127] = class_index + 1
 
                     colored_mask = np.zeros((h, w, 3), dtype=np.uint8)
 

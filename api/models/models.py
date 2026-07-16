@@ -75,6 +75,7 @@ class Research(Base):
     upload_date = Column(TIMESTAMP)
     name = Column(String)
     status_id = Column(UUID(as_uuid=True), ForeignKey("statuses.id"))
+    error_message = Column(String, nullable=True)
 
     user = relationship("User", back_populates="researches")
     patient = relationship("Patient", back_populates="researches")

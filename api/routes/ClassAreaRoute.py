@@ -6,8 +6,9 @@ import uuid
 from typing import List
 
 from db.db import get_db
-from models.models import ClassesArea as ClassesAreaModel
+from models.models import ClassesArea as ClassesAreaModel, User as UserModel
 from schemas.schemas import ClassesAreaSchema, ClassesArea
+from security import get_current_user
 
 router = APIRouter(
     prefix="/classes_areas",
@@ -18,7 +19,8 @@ router = APIRouter(
 @router.post("/", response_model=ClassesArea)
 async def create_classes_area(
         classes_area: ClassesAreaSchema,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Создает новую область классификации, предварительно проверяя
@@ -115,7 +117,8 @@ async def read_classes_area(
 async def update_classes_area(
         area_id: uuid.UUID,
         classes_area: ClassesAreaSchema,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Обновляет существующую область классификации.
@@ -171,7 +174,8 @@ async def update_classes_area(
 @router.delete("/{area_id}")
 async def delete_classes_area(
         area_id: uuid.UUID,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Удаляет область классификации по её ID.

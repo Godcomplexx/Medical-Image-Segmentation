@@ -5,8 +5,9 @@ import uuid
 from typing import List
 
 from db.db import get_db
-from models.models import Status as StatusModel
+from models.models import Status as StatusModel, User as UserModel
 from schemas.schemas import StatusSchema, Status
+from security import get_current_user
 
 router = APIRouter(
     prefix="/statuses",
@@ -15,7 +16,7 @@ router = APIRouter(
 
 
 @router.post("/", response_model=Status)
-async def create_status( status: StatusSchema, db: AsyncSession = Depends(get_db)):
+async def create_status( status: StatusSchema, db: AsyncSession = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """
     Создает новый статус.
 
@@ -69,7 +70,7 @@ async def read_status( status_id: uuid.UUID, db: AsyncSession = Depends(get_db))
 
 
 @router.put("/{status_id}", response_model=Status)
-async def update_status( status_id: uuid.UUID, status: StatusSchema, db: AsyncSession = Depends(get_db)):
+async def update_status( status_id: uuid.UUID, status: StatusSchema, db: AsyncSession = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """
     Обновляет существующий статус.
 
@@ -98,7 +99,7 @@ async def update_status( status_id: uuid.UUID, status: StatusSchema, db: AsyncSe
 
 
 @router.delete("/{status_id}")
-async def delete_status( status_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def delete_status( status_id: uuid.UUID, db: AsyncSession = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """
     Удаляет статус по его ID.
 

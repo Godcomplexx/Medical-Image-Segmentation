@@ -1,6 +1,7 @@
 import shutil
 from pathlib import Path
 import multiprocessing
+import os
 from finetune.config.logs_config import *
 
 from finetune.src.filetools.dicom_to_nifti_converter import create_t2_nifti
@@ -12,14 +13,32 @@ from finetune.src.yolo.label_generator import (create_demyelination_areas_markup
                                       ensure_empty_labels_exist)
 
 
+PIPELINE_VERSION = "yolo-dataset-v4-unicode-png"
+
+
+def is_current_completion_marker(marker_path: Path) -> bool:
+    """Return True only for output produced by the current safe pipeline."""
+    try:
+        return marker_path.read_text(encoding="utf-8").strip() == PIPELINE_VERSION
+    except (FileNotFoundError, OSError, UnicodeError):
+        return False
+
+
 def process_survey(survey_path: Path) -> bool:
     """
     Creates yolo dataset (images and labels) from DICOM and Markups
     :param survey_path: Path to directory with DICOM and Markups inside
     :return:
     """
+    output_path = settings.processed_data_path / survey_path.name
+    completion_marker = output_path / ".complete"
     try:
         logger_main.info(f"Processing {survey_path.name}")
+
+        # Remove only stale derived output from an earlier failed attempt.
+        # Source DICOM and Markups under input_data are never touched.
+        if output_path.exists() and not is_current_completion_marker(completion_marker):
+            shutil.rmtree(output_path)
 
         if not check_disk_space(settings.processed_data_path):
             logger_processing_manager.error(f"Skipping {survey_path.name} due to low disk space.")
@@ -53,11 +72,14 @@ def process_survey(survey_path: Path) -> bool:
         ensure_empty_labels_exist(yolo_path=settings.processed_data_path / survey_path.name / 'Yolo')
 
         shutil.rmtree(settings.processed_data_path / survey_path.name / 'NIFTI', ignore_errors=True)
+        completion_marker.write_text(PIPELINE_VERSION, encoding="utf-8")
 
         logger_processing_manager.info(f"Completed processing {survey_path.name}")
         return True
     except Exception as e:
         logger_processing_manager.error(f"Error processing {survey_path.name}: {str(e)}")
+        if output_path.exists() and not is_current_completion_marker(completion_marker):
+            shutil.rmtree(output_path, ignore_errors=True)
         return False
 
 
@@ -68,10 +90,22 @@ def run_pipeline() -> None:
     """
     logger_main.info("Starting yolo_dataset pipeline.")
 
-    num_processes = max(1, multiprocessing.cpu_count() - 1)
+    default_workers = min(4, max(1, multiprocessing.cpu_count() - 1))
+    num_processes = max(
+        1, int(os.getenv("FINETUNE_WORKERS", str(default_workers)))
+    )
+    logger_main.info(f"Using {num_processes} dataset workers.")
+    selected_case = os.getenv("FINETUNE_CASE")
     survey_paths: list[Path] = [
         p for p in settings.input_data_path.iterdir()
-        if p.is_dir() and not p.name.startswith('.') and not (settings.processed_data_path / p.name).exists()
+        if (
+            p.is_dir()
+            and not p.name.startswith('.')
+            and (selected_case is None or p.name == selected_case)
+            and not is_current_completion_marker(
+                settings.processed_data_path / p.name / ".complete"
+            )
+        )
     ]
     if not survey_paths:
         logger_main.info("No new surveys to process. Everything is up-to-date.")

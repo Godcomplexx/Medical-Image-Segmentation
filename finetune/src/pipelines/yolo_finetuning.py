@@ -12,7 +12,18 @@ def run_pipeline() -> bool:
     try:
         logger_main.info(f"Processing")
 
-        create_train_set()
+        train_images = settings.train_set_path / "images" / "finetune"
+        val_images = settings.train_set_path / "images" / "val"
+        dataset_ready = (
+            train_images.exists()
+            and val_images.exists()
+            and any(train_images.glob("*.png"))
+            and any(val_images.glob("*.png"))
+        )
+        if dataset_ready:
+            logger_main.info("Using the existing prepared train/val dataset.")
+        else:
+            create_train_set(reset=True)
 
         write_config_yaml()
 

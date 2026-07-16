@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="840" viewBox="0 0 1000 840">
+  <style>
+    text { font-family: Arial, Helvetica, sans-serif; fill: #1A1A1A; }
+    .axis { font-size: 26px; }
+    .value { font-size: 25px; text-anchor: middle; dominant-baseline: middle; }
+    .white { fill: white; }
+  </style>
+  <rect width="1000" height="840" fill="white"/>
+  <g transform="translate(200,110)">
+    <rect x="0" y="0" width="520" height="520" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+    <rect x="0" y="0" width="130" height="130" fill="#084594"/><text x="65" y="65" class="value white">0.98</text>
+    <rect x="130" y="0" width="130" height="130" fill="#F7FBFF"/><text x="195" y="65" class="value">0.00</text>
+    <rect x="260" y="0" width="130" height="130" fill="#EFF6FC"/><text x="325" y="65" class="value">0.02</text>
+    <rect x="390" y="0" width="130" height="130" fill="#F7FBFF"/><text x="455" y="65" class="value">0.00</text>
+    <rect x="0" y="130" width="130" height="130" fill="#F7FBFF"/><text x="65" y="195" class="value">0.00</text>
+    <rect x="130" y="130" width="130" height="130" fill="#2171B5"/><text x="195" y="195" class="value white">0.78</text>
+    <rect x="260" y="130" width="130" height="130" fill="#C6DBEF"/><text x="325" y="195" class="value">0.21</text>
+    <rect x="390" y="130" width="130" height="130" fill="#F7FBFF"/><text x="455" y="195" class="value">0.01</text>
+    <rect x="0" y="260" width="130" height="130" fill="#F7FBFF"/><text x="65" y="325" class="value">0.00</text>
+    <rect x="130" y="260" width="130" height="130" fill="#E3EEF8"/><text x="195" y="325" class="value">0.07</text>
+    <rect x="260" y="260" width="130" height="130" fill="#1764AA"/><text x="325" y="325" class="value white">0.83</text>
+    <rect x="390" y="260" width="130" height="130" fill="#D6E6F4"/><text x="455" y="325" class="value">0.10</text>
+    <rect x="0" y="390" width="130" height="130" fill="#F7FBFF"/><text x="65" y="455" class="value">0.01</text>
+    <rect x="130" y="390" width="130" height="130" fill="#F2F8FD"/><text x="195" y="455" class="value">0.04</text>
+    <rect x="260" y="390" width="130" height="130" fill="#D6E6F4"/><text x="325" y="455" class="value">0.09</text>
+    <rect x="390" y="390" width="130" height="130" fill="#0B559F"/><text x="455" y="455" class="value white">0.87</text>
+    <g stroke="#FFFFFF" stroke-width="1"><path d="M130 0V520M260 0V520M390 0V520M0 130H520M0 260H520M0 390H520"/></g>
+    <text x="65" y="555" class="axis" text-anchor="middle">I</text><text x="195" y="555" class="axis" text-anchor="middle">P</text><text x="325" y="555" class="axis" text-anchor="middle">S</text><text x="455" y="555" class="axis" text-anchor="middle">U</text>
+    <text x="-25" y="72" class="axis" text-anchor="end">I</text><text x="-25" y="202" class="axis" text-anchor="end">P</text><text x="-25" y="332" class="axis" text-anchor="end">S</text><text x="-25" y="462" class="axis" text-anchor="end">U</text>
+    <text x="260" y="620" class="axis" text-anchor="middle">Предсказанный класс</text>
+    <text x="-110" y="260" class="axis" text-anchor="middle" transform="rotate(-90 -110 260)">Истинный класс</text>
+  </g>
+</svg>

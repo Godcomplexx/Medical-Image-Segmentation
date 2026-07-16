@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <style>
+    text { font-family: Arial, Helvetica, sans-serif; fill: #1A1A1A; }
+    .title { font-size: 34px; font-weight: 700; text-anchor: middle; }
+    .axis { font-size: 24px; }
+    .label { font-size: 25px; font-weight: 700; text-anchor: middle; }
+    .value { font-size: 23px; font-weight: 700; text-anchor: middle; }
+    .small { font-size: 22px; }
+    .grid { stroke: #D9D9D9; stroke-width: 1.2; }
+  </style>
+  <rect x="0" y="0" width="1600" height="980" fill="white"/>
+  <line x1="170" y1="790" x2="1490" y2="790" stroke="#172B4D" stroke-width="3"/>
+  <line x1="170" y1="150" x2="170" y2="790" stroke="#172B4D" stroke-width="3"/>
+  <line x1="170" y1="662" x2="1490" y2="662" class="grid"/><line x1="170" y1="534" x2="1490" y2="534" class="grid"/><line x1="170" y1="406" x2="1490" y2="406" class="grid"/><line x1="170" y1="278" x2="1490" y2="278" class="grid"/><line x1="170" y1="150" x2="1490" y2="150" class="grid"/>
+  <text x="125" y="798" class="axis">0</text><text x="125" y="670" class="axis">0.2</text><text x="125" y="542" class="axis">0.4</text><text x="125" y="414" class="axis">0.6</text><text x="125" y="286" class="axis">0.8</text><text x="125" y="158" class="axis">1.0</text>
+  <text x="55" y="515" class="axis" transform="rotate(-90 55 515)">F1</text>
+  <rect x="300" y="246" width="90" height="544" fill="#B3B3B3"/><rect x="395" y="201" width="90" height="589" fill="#4D4D4D"/>
+  <rect x="610" y="291" width="90" height="499" fill="#B3B3B3"/><rect x="705" y="284" width="90" height="506" fill="#4D4D4D"/>
+  <rect x="920" y="316" width="90" height="474" fill="#B3B3B3"/><rect x="1015" y="240" width="90" height="550" fill="#4D4D4D"/>
+  <rect x="1230" y="566" width="90" height="224" fill="#B3B3B3"/><rect x="1325" y="278" width="90" height="512" fill="#4D4D4D"/>
+  <text x="345" y="228" class="value">0.85</text><text x="440" y="183" class="value">0.92</text><text x="655" y="273" class="value">0.78</text><text x="750" y="266" class="value">0.79</text><text x="965" y="298" class="value">0.74</text><text x="1060" y="222" class="value">0.86</text><text x="1275" y="548" class="value">0.35</text><text x="1370" y="260" class="value">0.80</text>
+  <text x="392" y="840" class="label">I</text><text x="702" y="840" class="label">P</text><text x="1012" y="840" class="label">S</text><text x="1322" y="840" class="label">U</text>
+  <rect x="500" y="895" width="30" height="22" fill="#B3B3B3"/><text x="545" y="915" class="small">исходная разметка</text><rect x="850" y="895" width="30" height="22" fill="#4D4D4D"/><text x="895" y="915" class="small">после переразметки U/S</text>
+</svg>

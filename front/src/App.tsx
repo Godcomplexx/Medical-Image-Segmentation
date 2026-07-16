@@ -4,7 +4,7 @@ import { Toaster, toast } from 'sonner';
 import { LoginForm } from './components/LoginForm';
 import { AnimatedSphere } from './components/AnimatedSphere';
 import { Dashboard } from './components/Dashboard';
-import { loginUser, registerUser } from './api/api';
+import { loginUser, registerUser, logout } from './api/api';
 
 interface User {
   id: string;
@@ -42,6 +42,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    logout();
     setCurrentUser(null);
     setIsTransitioning(false);
   };

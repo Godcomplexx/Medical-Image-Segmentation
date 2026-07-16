@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="940" viewBox="0 0 1600 940">
+  <style>
+    text { font-family: Arial, Helvetica, sans-serif; fill: #1A1A1A; }
+    .title { font-size: 34px; font-weight: 700; text-anchor: middle; }
+    .label { font-size: 23px; font-weight: 700; }
+    .small { font-size: 19px; }
+    .call { fill: #FFFFFF; stroke: #4D4D4D; stroke-width: 2.5; rx: 10; }
+    .line { fill: none; stroke: #4D4D4D; stroke-width: 2.5; marker-end: url(#arrow); }
+    .measure { fill: none; stroke: #4D4D4D; stroke-width: 2.5; stroke-dasharray: 7 6; marker-start: url(#dot); marker-end: url(#arrowOrange); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 Z" fill="#4D4D4D"/></marker>
+    <marker id="arrowOrange" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 Z" fill="#4D4D4D"/></marker>
+    <marker id="dot" markerWidth="8" markerHeight="8" refX="4" refY="4"><circle cx="4" cy="4" r="3.5" fill="#4D4D4D"/></marker>
+  </defs>
+  <rect width="1600" height="940" fill="white"/>
+
+  <ellipse cx="720" cy="470" rx="335" ry="290" fill="#4D4D4D" stroke="#1A1A1A" stroke-width="3"/>
+  <ellipse cx="720" cy="470" rx="308" ry="265" fill="#D9D9D9"/>
+  <ellipse cx="720" cy="470" rx="283" ry="240" fill="#B3B3B3"/>
+  <path d="M480 400 C520 250, 650 220, 720 240 C790 220, 920 250, 960 400 C900 340, 825 330, 720 355 C615 330, 540 340, 480 400 Z" fill="#E6E6E6"/>
+  <path d="M480 540 C520 690, 650 720, 720 700 C790 720, 920 690, 960 540 C900 600, 825 610, 720 585 C615 610, 540 600, 480 540 Z" fill="#E6E6E6"/>
+  <path d="M688 405 C654 390, 625 410, 632 442 C639 465, 668 478, 695 465 C678 444, 679 424, 688 405 Z" fill="#737373"/>
+  <path d="M752 405 C786 390, 815 410, 808 442 C801 465, 772 478, 745 465 C762 444, 761 424, 752 405 Z" fill="#737373"/>
+  <ellipse cx="720" cy="640" rx="115" ry="62" fill="#8C8C8C"/>
+  <ellipse cx="720" cy="590" rx="36" ry="70" fill="#666666"/>
+  <path d="M865 350 C900 342, 925 375, 910 408 C892 438, 853 427, 846 392 C842 371, 850 356, 865 350 Z" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="3"/>
+  <circle cx="881" cy="385" r="8" fill="white"/>
+
+  <path d="M884 350 L1080 235" class="line"/>
+  <rect x="1080" y="165" width="420" height="125" class="call"/>
+  <text x="1110" y="207" class="label">Очаг</text>
+  <text x="1110" y="240" class="small">площадь, центроид, форма</text>
+  <text x="1110" y="268" class="small">и положение по z</text>
+
+  <path d="M780 455 L1080 410" class="line"/>
+  <rect x="1080" y="345" width="420" height="125" class="call"/>
+  <text x="1110" y="387" class="label">Желудочки</text>
+  <text x="1110" y="420" class="small">минимальная дистанция</text>
+  <text x="1110" y="448" class="small">и перекрытие с маской</text>
+
+  <path d="M830 625 L1080 605" class="line"/>
+  <rect x="1080" y="540" width="420" height="125" class="call"/>
+  <text x="1110" y="582" class="label">Ствол и мозжечок</text>
+  <text x="1110" y="615" class="small">перекрытие → признак</text>
+  <text x="1110" y="643" class="small">инфратенториальности</text>
+
+  <path d="M520 315 L250 235" class="line"/>
+  <rect x="70" y="165" width="360" height="125" class="call"/>
+  <text x="100" y="207" class="label">Кора</text>
+  <text x="100" y="240" class="small">контакт с расширенной</text>
+  <text x="100" y="268" class="small">кортикальной маской</text>
+
+  <path d="M858 387 C820 350, 785 330, 760 320" class="measure"/>
+  <text x="785" y="332" class="small">d до коры</text>
+  <path d="M850 400 C815 410, 790 425, 765 436" class="measure"/>
+  <text x="790" y="465" class="small">d до желудочка</text>
+
+  <rect x="195" y="780" width="1210" height="92" rx="10" fill="#F2F2F2" stroke="#4D4D4D" stroke-width="2.5"/>
+  <text x="800" y="820" class="label" text-anchor="middle">Вектор признаков: контакт, расстояния, перекрытия, z-координата и площадь</text>
+  <text x="800" y="850" class="small" text-anchor="middle">→ HistGradientBoosting → I / P / S / U</text>
+</svg>

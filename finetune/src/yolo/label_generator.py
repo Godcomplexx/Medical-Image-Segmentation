@@ -120,6 +120,12 @@ def generate_labels(
                     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
                     for cnt in contours:
+                        # YOLO segment-формат требует полигон из >= 3 точек.
+                        # Вырожденные контуры (1-2 точки) дают строку с <= 4 числами,
+                        # которую Ultralytics принимает за bbox → "detect-segment mixed
+                        # dataset" → фатальная ошибка "segment dataset incorrectly formatted".
+                        if len(cnt) < 3:
+                            continue
                         polygon = [f"{x[0][0] / width:.6f} {x[0][1] / height:.6f}" for x in cnt]
                         if polygon:
                             annotations.append(f"{class_id} " + " ".join(polygon))
@@ -131,7 +137,8 @@ def generate_labels(
             if annotations:
                 label_path = labels_dir / f"slice_{slice_index}.txt"
                 try:
-                    label_path.write_text('\n'.join(annotations))
+                    unique_annotations = list(dict.fromkeys(annotations))
+                    label_path.write_text('\n'.join(unique_annotations))
                 except Exception as e:
                     logger_main.error(f"Failed to write label file {label_path}: {e}")
 

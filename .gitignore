@@ -21,6 +21,7 @@ env/
 
 # Pytest
 .pytest_cache/
+.pytest-tmp/
 .coverage
 htmlcov/
 
@@ -44,8 +45,42 @@ Thumbs.db
 
 # Node.js
 node_modules/
+front/build/
 
 # Локальные данные и временные файлы
 data/
+finetune/fileStorage/
 celerybeat-schedule
 celerybeat.pid
+
+# --- добавлено: окружения, служебные папки, данные инструмента ---
+# Python-окружения (любые варианты)
+.venv-train/
+.venv-samseg/
+.venv*/
+
+# Служебные папки агентов/инструментов (не часть проекта)
+.claude/
+.codex/
+.claude-skills.json
+
+# Автоскачиваемые предобученные веса
+yolo11n.pt
+yolo11m-seg.pt
+yolo*.pt
+
+# Резервные копии документов
+*_BACKUP.docx
+
+# Результаты работы инструмента разметки (могут содержать данные пациентов)
+review_tool/output/
+review_tool/accepted/
+review_tool/input/*
+!review_tool/input/*.txt
+
+# Выходные данные обучения YOLO
+runs/
+
+# Артефакты агента
+SKILL.md
+SKILL (1).md

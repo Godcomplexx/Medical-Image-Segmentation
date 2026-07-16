@@ -5,8 +5,9 @@ import uuid
 from typing import List
 
 from db.db import get_db
-from models.models import Localization as LocalizationModel
+from models.models import Localization as LocalizationModel, User as UserModel
 from schemas.schemas import LocalizationSchema, Localization
+from security import get_current_user
 
 router = APIRouter(
     prefix="/localizations",
@@ -17,7 +18,8 @@ router = APIRouter(
 @router.post("/", response_model=Localization)
 async def create_localization(
         localization: LocalizationSchema,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Создает новую локализацию.
@@ -78,7 +80,8 @@ async def read_localization(
 async def update_localization(
         zone_id: uuid.UUID,
         localization: LocalizationSchema,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Обновляет существующую локализацию.
@@ -110,7 +113,8 @@ async def update_localization(
 @router.delete("/{zone_id}")
 async def delete_localization(
         zone_id: uuid.UUID,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Удаляет локализацию по её ID.

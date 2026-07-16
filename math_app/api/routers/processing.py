@@ -5,6 +5,7 @@ from pathlib import Path
 import zipfile
 import shutil
 from src.pipelines.volumes_predict import process_survey
+from src.filetools.safe_paths import safe_name, resolve_within, safe_extract_zip
 from config.settings import settings
 from config.logs_config import logger_load_data
 from typing import Literal
@@ -15,9 +16,11 @@ router = APIRouter()
 
 @router.post("/upload_zip")
 async def upload_zip(file: UploadFile = File(...)):
-    folder_name = Path(file.filename).stem
-    zip_path = settings.input_data_path / file.filename
-    target_dir = settings.input_data_path / folder_name
+    # Берём только базовое имя файла и валидируем как безопасный компонент пути.
+    zip_filename = safe_name(Path(file.filename or "").name)
+    folder_name = safe_name(Path(zip_filename).stem)
+    zip_path = resolve_within(settings.input_data_path, zip_filename)
+    target_dir = resolve_within(settings.input_data_path, folder_name)
 
     if zip_path.exists() or target_dir.exists():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
@@ -30,11 +33,7 @@ async def upload_zip(file: UploadFile = File(...)):
 
     try:
         with zipfile.ZipFile(zip_path) as zf:
-            for member in zf.namelist():
-                member_path = (target_dir / member).resolve()
-                if not str(member_path).startswith(str(target_dir.resolve())):
-                    raise HTTPException(status_code=400, detail="Unsafe path in ZIP")
-            zf.extractall(target_dir)
+            safe_extract_zip(zf, target_dir)
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Not a valid ZIP file")
     finally:
@@ -45,7 +44,7 @@ async def upload_zip(file: UploadFile = File(...)):
 @router.post("/run_process")
 async def run_process(folder_name: str = Form(...)):
     try:
-        folder_path = settings.input_data_path / folder_name
+        folder_path = resolve_within(settings.input_data_path, safe_name(folder_name))
 
         if not folder_path.exists():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Folder '{folder_name}' not found.")
@@ -89,8 +88,8 @@ async def download_file(
     - GET /download/parcellation/my_study
     """
     try:
-        # Базовая папка исследования
-        study_path = settings.processed_data_path / study_name
+        # Базовая папка исследования (валидируем имя и путь)
+        study_path = resolve_within(settings.processed_data_path, safe_name(study_name))
         if not study_path.exists():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Study not found")
 
@@ -143,16 +142,19 @@ async def download_file(
 async def delete_survey(study_name: str):
 
     try:
-        survey_path: Path = settings.processed_data_path / study_name
-        survey_morf: Path = settings.morphometry_path / study_name
-        input_files: Path = settings.input_data_path / study_name
+        safe_study = safe_name(study_name)
+        survey_path: Path = resolve_within(settings.processed_data_path, safe_study)
+        survey_morf: Path = resolve_within(settings.morphometry_path, safe_study)
+        input_files: Path = resolve_within(settings.input_data_path, safe_study)
 
         shutil.rmtree(survey_path,ignore_errors=True)
         shutil.rmtree(survey_morf,ignore_errors=True)
         shutil.rmtree(input_files, ignore_errors=True)
 
 
-        return {'status': 'ok', 'deleted': study_name}
+        return {'status': 'ok', 'deleted': safe_study}
+    except HTTPException:
+        raise
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

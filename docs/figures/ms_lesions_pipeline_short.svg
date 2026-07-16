@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="680" viewBox="0 0 1600 680">
+  <style>
+    text { font-family: Arial, Helvetica, sans-serif; fill: #1A1A1A; }
+    .label { font-size: 25px; font-weight: 700; text-anchor: middle; }
+    .small { font-size: 19px; text-anchor: middle; }
+    .box { fill: #FFFFFF; stroke: #4D4D4D; stroke-width: 2.5; rx: 10; }
+    .out { fill: #E6E6E6; stroke: #4D4D4D; stroke-width: 2.5; rx: 10; }
+    .arrow { fill: none; stroke: #4D4D4D; stroke-width: 3; marker-end: url(#arrow); }
+  </style>
+  <defs><marker id="arrow" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 Z" fill="#4D4D4D"/></marker></defs>
+  <rect width="1600" height="680" fill="white"/>
+  <rect x="45" y="150" width="245" height="130" class="box"/>
+  <text x="168" y="195" class="label">FLAIR</text><text x="168" y="230" class="small">срезы s−1, s, s+1</text><text x="168" y="257" class="small">2.5D-вход</text>
+  <rect x="350" y="150" width="245" height="130" class="box"/>
+  <text x="472" y="195" class="label">2.5D U-Net</text><text x="472" y="230" class="small">сегментация</text><text x="472" y="257" class="small">«очаг / фон»</text>
+  <rect x="655" y="150" width="245" height="130" class="box"/>
+  <text x="777" y="195" class="label">Кандидаты</text><text x="777" y="230" class="small">связные компоненты</text><text x="777" y="257" class="small">очагов</text>
+  <rect x="960" y="150" width="270" height="130" class="box"/>
+  <text x="1095" y="195" class="label">SynthSeg</text><text x="1095" y="230" class="small">кора, желудочки,</text><text x="1095" y="257" class="small">ствол, мозжечок</text>
+  <rect x="1285" y="150" width="270" height="130" class="box"/>
+  <text x="1420" y="195" class="label">Признаки</text><text x="1420" y="230" class="small">контакт, расстояние,</text><text x="1420" y="257" class="small">перекрытие, z, площадь</text>
+  <path d="M290 215 H350" class="arrow"/><path d="M595 215 H655" class="arrow"/><path d="M900 215 H960" class="arrow"/><path d="M1230 215 H1285" class="arrow"/>
+  <rect x="585" y="410" width="345" height="130" class="out"/>
+  <text x="757" y="456" class="label">HistGradientBoosting</text><text x="757" y="491" class="small">анатомический классификатор</text>
+  <rect x="1050" y="410" width="440" height="130" class="out"/>
+  <text x="1270" y="455" class="label">Класс очага: I / P / S / U</text><text x="1270" y="491" class="small">инфратентор. · перивентр. · субкорт. · юкстакорт.</text>
+  <path d="M777 280 V365 H757 V410" class="arrow"/><path d="M1420 280 V365 H930" class="arrow"/><path d="M930 475 H1050" class="arrow"/>
+  <text x="800" y="625" class="small">Класс определяется анатомическим положением очага относительно структур мозга.</text>
+</svg>

@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="940" viewBox="0 0 1600 940">
+  <style>
+    text { font-family: Arial, Helvetica, sans-serif; fill: #1A1A1A; }
+    .title { font-size: 34px; font-weight: 700; }
+    .label { font-size: 23px; font-weight: 700; text-anchor: middle; }
+    .small { font-size: 18px; text-anchor: middle; }
+    .note { font-size: 20px; }
+    .box, .box2, .train, .out { fill: #FFFFFF; stroke: #4D4D4D; stroke-width: 2.5; rx: 10; }
+    .train { fill: #F2F2F2; }
+    .out { fill: #E6E6E6; }
+    .arrow { fill: none; stroke: #4D4D4D; stroke-width: 3; marker-end: url(#arrow); }
+    .dashed { fill: none; stroke: #777777; stroke-width: 2.5; stroke-dasharray: 9 7; marker-end: url(#arrowGold); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 Z" fill="#4D4D4D"/></marker>
+    <marker id="arrowGold" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 Z" fill="#777777"/></marker>
+  </defs>
+
+  <text x="800" y="65" class="note" text-anchor="middle">Инференс: FLAIR; LST-AI используется только для пополнения разметки при обучении</text>
+
+  <rect x="45" y="180" width="250" height="130" class="box"/>
+  <text x="170" y="225" class="label">FLAIR</text>
+  <text x="170" y="258" class="small">срезы s−1, s, s+1</text>
+  <text x="170" y="285" class="small">2.5D-вход</text>
+
+  <rect x="350" y="180" width="250" height="130" class="box"/>
+  <text x="475" y="225" class="label">2.5D U-Net</text>
+  <text x="475" y="258" class="small">сегментация</text>
+  <text x="475" y="285" class="small">«очаг / фон»</text>
+
+  <rect x="655" y="180" width="250" height="130" class="box2"/>
+  <text x="780" y="225" class="label">Кандидаты</text>
+  <text x="780" y="258" class="small">связные компоненты</text>
+  <text x="780" y="285" class="small">очагов</text>
+
+  <rect x="960" y="180" width="270" height="130" class="box"/>
+  <text x="1095" y="225" class="label">SynthSeg</text>
+  <text x="1095" y="258" class="small">кора, желудочки,</text>
+  <text x="1095" y="285" class="small">ствол, мозжечок</text>
+
+  <rect x="1285" y="180" width="270" height="130" class="box2"/>
+  <text x="1420" y="220" class="label">Признаки</text>
+  <text x="1420" y="252" class="small">контакт, расстояние,</text>
+  <text x="1420" y="279" class="small">перекрытие, z, площадь</text>
+
+  <path d="M295 245 H350" class="arrow"/>
+  <path d="M600 245 H655" class="arrow"/>
+  <path d="M905 245 H960" class="arrow"/>
+  <path d="M1230 245 H1285" class="arrow"/>
+
+  <rect x="700" y="440" width="300" height="125" class="out"/>
+  <text x="850" y="482" class="label">HistGradientBoosting</text>
+  <text x="850" y="517" class="small">анатомический</text>
+  <text x="850" y="544" class="small">классификатор</text>
+  <path d="M780 310 V400 H850 V440" class="arrow"/>
+  <path d="M1420 310 V400 H1000" class="arrow"/>
+
+  <rect x="1070" y="440" width="460" height="125" class="out"/>
+  <text x="1300" y="480" class="label">Класс очага: I / P / S / U</text>
+  <text x="1300" y="522" class="small">I — инфратент. · P — перивентр.</text>
+  <text x="1300" y="550" class="small">S — субкорт. · U — юкстакорт.</text>
+  <path d="M1000 503 H1070" class="arrow"/>
+
+  <rect x="55" y="665" width="330" height="155" class="train"/>
+  <text x="220" y="710" class="label">Только обучение</text>
+  <text x="220" y="745" class="small">LST-AI + исходная GT-разметка</text>
+  <text x="220" y="773" class="small">→ проверенные псевдометки</text>
+  <text x="220" y="800" class="small">→ дополненная train-разметка</text>
+
+  <rect x="470" y="665" width="380" height="155" class="train"/>
+  <text x="660" y="710" class="label">Согласование классов</text>
+  <text x="660" y="745" class="small">U, если ≥50% площади очага</text>
+  <text x="660" y="773" class="small">находится в коре; иначе S</text>
+  <text x="660" y="800" class="small">I и P не изменяются</text>
+  <path d="M385 742 H470" class="dashed"/>
+  <path d="M660 665 V600 H475 V310" class="dashed"/>
+
+</svg>

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -40,10 +40,18 @@ async def get_or_create_classification_by_name(db: AsyncSession, name: str) -> C
 
 async def add_classes_area_to_research(db: AsyncSession, data:List[List[str]], research_id: uuid.UUID) -> List[ClassesAreaModel]:
     """
-    Добавляет новую запись ClassesArea к существующему исследованию.
+    Заменяет области классификации исследования на переданные.
+
+    Идемпотентность: перед добавлением удаляются уже существующие области
+    исследования, чтобы повторная обработка (Celery redelivery / повторный
+    запуск) не приводила к дублированию строк.
     """
     created_areas = []
     created_area_ids = []
+    # 0. Удаляем ранее сохранённые области этого исследования (идемпотентность)
+    await db.execute(
+        delete(ClassesAreaModel).where(ClassesAreaModel.research_id == research_id)
+    )
     # 1. Итерируемся по каждой строке из входного массива
     for item in data:
         # Распаковываем данные из строки

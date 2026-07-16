@@ -11,8 +11,18 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.db import get_db
-from schemas.schemas import ResearchCreateSchema, Research, ResearchStatusUpdateByIdSchema, ClassesAreaCreateSchema, ClassesArea
+from schemas.schemas import ResearchCreateSchema, Research, ResearchStatusUpdateByIdSchema, ResearchFailSchema, ClassesAreaCreateSchema, ClassesArea
 from crud import crud_research, crud_user, crud_status, crud_classes_area
+from models.models import User as UserModel, Research as ResearchModel
+from security import get_current_user, get_principal, Principal
+from constants import (
+    STATUS_UPLOADED,
+    STATUS_QUEUED,
+    STATUS_PROCESSING,
+    STATUS_READY,
+    STATUS_FAILED,
+    InvalidStatusTransition,
+)
 
 FILESTORAGE_SERVICE_BASE_URL = os.getenv("FILESTORAGE_SERVICE_BASE_URL", "http://localhost:8003")
 BROKER_URL = os.getenv("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//")
@@ -43,12 +53,30 @@ celery_client.conf.update(
 
 
 
+def _require_research_owner(research: ResearchModel, current_user: UserModel) -> None:
+    """Запрещает доступ к чужим исследованиям."""
+    if research.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this research.",
+        )
+
+
+def _enforce_owner_unless_internal(
+    principal: Principal, research: ResearchModel
+) -> None:
+    """Для пользователя проверяет владельца; внутренний сервис пропускается."""
+    if not principal.is_internal:
+        _require_research_owner(research, principal.user)
+
+
 @router.post("/upload_zip", response_model=Research, status_code=status.HTTP_201_CREATED)
 async def upload_zip_and_create_research(
-        user_email: str = Form(...),
         patient_id: uuid.UUID = Form(...),
         file: UploadFile = File(...),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
+        user_email: str = Form(None),  # принимается для совместимости, но владелец берётся из токена
 ):
     """
     Главный эндпоинт для создания проекта.
@@ -75,13 +103,8 @@ async def upload_zip_and_create_research(
             detail="Invalid file type. Only .zip files are accepted."
         )
 
-    # 2. Проверка существования пользователя через CRUD-функцию
-    user = await crud_user.get_user_by_email(db, email=user_email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with email {user_email} not found."
-        )
+    # 2. Владелец исследования — текущий аутентифицированный пользователь
+    user = current_user
     # 3. Генерация ID и имени исследования
     research_id = uuid.uuid4()
     research_short_name = str(research_id)[:5]
@@ -106,7 +129,7 @@ async def upload_zip_and_create_research(
 
     # 5. Если внешний сервис ответил успешно, создаем проект в нашей БД
     research_data = ResearchCreateSchema(
-        user_email=user_email,
+        user_email=current_user.email,
         patient_id=patient_id,
         name=f"Исследование {research_short_name}",
     )
@@ -121,27 +144,52 @@ async def upload_zip_and_create_research(
 
 
 @router.post("/{research_id}/process", status_code=status.HTTP_202_ACCEPTED)
-async def process_folder(folder_name: str = Form(...), db: AsyncSession = Depends(get_db)):
+async def process_folder(
+        research_id: uuid.UUID,
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
+):
     """
-    Отправить папку на обработку через Celery очередь.
+    Отправить исследование на обработку через Celery очередь.
 
     Args:
-        folder_name: Имя папки в fileStorage для обработки
+        research_id: UUID исследования из пути URL.
     """
+    research = await crud_research.get_research(db, research_id=research_id)
+    if not research:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research not found")
+    _require_research_owner(research, current_user)
+
+    # Идемпотентность: нельзя ставить в очередь исследование, которое уже в работе.
+    if not research.status or research.status.status_name != STATUS_UPLOADED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Research can only be queued from the uploaded state "
+                f"(current: {research.status.status_name if research.status else 'unknown'})."
+            ),
+        )
+
+    # Имя папки в fileStorage — детерминированный префикс UUID исследования.
+    folder_name = str(research.id)[:5]
+    print(f"[Clinical API] Отправляем задачу для папки: {folder_name}")
+
     try:
-        print(f"[Clinical API] Отправляем задачу для папки: {folder_name}")
+        # Обновляем статус исследования на "В очереди"
+        status_obj = await crud_status.get_status_by_name(db, STATUS_QUEUED)
+        if not status_obj:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Queued status is not configured.",
+            )
+        research = await crud_research.update_research_status(
+            db, research=research, status=status_obj
+        )
 
-        # Обновляем статус исследования на "В очереди" (если найдём его по префиксу)
-        research = await crud_research.get_research_by_short_id(db, short_id=folder_name)
-        if research:
-            status_obj = await crud_status.get_status_by_name(db, "В очереди")
-            if status_obj:
-                await crud_research.update_research_status(db, research=research, status=status_obj)
-
-        # Отправляем задачу в Celery очередь, передаём и короткое имя, и полный research_id (если найден)
+        # Отправляем задачу в Celery очередь, передаём короткое имя и полный research_id
         task = celery_client.send_task(
             "tasks.calculate",
-            args=[folder_name, str(research.id) if research else None],
+            args=[folder_name, str(research.id)],
             queue="math_tasks"
         )
 
@@ -154,6 +202,17 @@ async def process_folder(folder_name: str = Form(...), db: AsyncSession = Depend
 
     except Exception as e:
         traceback.print_exc()
+        failed_status = await crud_status.get_status_by_name(db, STATUS_FAILED)
+        if failed_status and research.status:
+            try:
+                await crud_research.set_research_failed(
+                    db,
+                    research=research,
+                    status=failed_status,
+                    error_message=f"Failed to enqueue processing task: {e}",
+                )
+            except InvalidStatusTransition:
+                pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка при отправке задачи: {str(e)}"
@@ -163,11 +222,14 @@ async def process_folder(folder_name: str = Form(...), db: AsyncSession = Depend
 async def add_classes_area_to_research(
         research_id: str,
         data: List[List[str]],
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        principal: Principal = Depends(get_principal),
 ):
     """
     Добавляет новую область классификации к существующему исследованию.
     Если локализация или классификация с указанным именем не существуют, они будут созданы.
+
+    Вызывается DB-воркером (внутренний токен) после расчёта, либо владельцем.
 
     Входные данные:
     - **research_id**: UUID исследования из пути URL.
@@ -185,6 +247,7 @@ async def add_classes_area_to_research(
         research = await crud_research.get_research_by_short_id(db, short_id=research_id)
     if not research:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research not found")
+    _enforce_owner_unless_internal(principal, research)
 
     # Валидация входных данных
     for item in data:
@@ -206,16 +269,49 @@ async def add_classes_area_to_research(
         db=db, data=data, research_id=research.id
     )
     # После успешного сохранения площадей — обновляем статус исследования на "Готов"
-    status_obj = await crud_status.get_status_by_name(db, "Готов")
+    status_obj = await crud_status.get_status_by_name(db, STATUS_READY)
     if status_obj:
         await crud_research.update_research_status(db, research=research, status=status_obj)
     return created_areas
+
+
+@router.post("/{research_id}/fail", response_model=Research)
+async def mark_research_failed(
+        research_id: str,
+        payload: ResearchFailSchema,
+        db: AsyncSession = Depends(get_db),
+        principal: Principal = Depends(get_principal),
+):
+    """Переводит исследование в статус "Ошибка" и сохраняет текст ошибки.
+
+    Вызывается math-воркером (внутренний токен) при неустранимом сбое обработки,
+    либо владельцем исследования.
+    """
+    try:
+        research_uuid = uuid.UUID(research_id)
+        research = await crud_research.get_research(db, research_id=research_uuid)
+    except ValueError:
+        research = await crud_research.get_research_by_short_id(db, short_id=research_id)
+    if not research:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research not found")
+    _enforce_owner_unless_internal(principal, research)
+
+    status_obj = await crud_status.get_status_by_name(db, STATUS_FAILED)
+    if not status_obj:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed status is not configured.")
+    try:
+        return await crud_research.set_research_failed(
+            db, research=research, status=status_obj, error_message=payload.error_message
+        )
+    except InvalidStatusTransition as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 @router.get("/{research_id}/download/{file_type}")
 async def download_processed_file(
         research_id: uuid.UUID,
         file_type: Literal["t1", "t2", "prediction", "parcellation"],
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
 ):
     """
     Прокси-эндпоинт для скачивания обработанных файлов из внешнего сервиса.
@@ -238,6 +334,7 @@ async def download_processed_file(
     research = await crud_research.get_research(db, research_id=research_id)
     if not research:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research not found")
+    _require_research_owner(research, current_user)
 
     # 2. Формирование URL для запроса к внешнему сервису
     study_name = str(research_id)[:5]
@@ -262,23 +359,27 @@ async def download_processed_file(
 
 
 @router.get("/", response_model=List[Research])
-async def read_researches(db: AsyncSession = Depends(get_db)):
+async def read_researches(
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
+):
     """
-    Получает список всех проектов.
-
-    Входные данные:
-    - Нет.
+    Получает список проектов текущего пользователя.
 
     Возвращает:
-    - Список объектов проектов.
+    - Список объектов проектов, принадлежащих пользователю.
     """
-    return await crud_research.get_researches(db)
+    return await crud_user.get_user_researches(db, user_id=current_user.id)
 
 
 @router.get("/{research_id}", response_model=Research)
-async def read_research(research_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def read_research(
+        research_id: uuid.UUID,
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
+):
     """
-    Получает один проект по его ID.
+    Получает один проект по его ID. Доступно только владельцу.
 
     Входные данные:
     - **research_id**: UUID проекта из пути URL.
@@ -289,6 +390,7 @@ async def read_research(research_id: uuid.UUID, db: AsyncSession = Depends(get_d
     db_research = await crud_research.get_research(db, research_id=research_id)
     if db_research is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research not found")
+    _require_research_owner(db_research, current_user)
     return db_research
 
 
@@ -296,8 +398,10 @@ async def read_research(research_id: uuid.UUID, db: AsyncSession = Depends(get_d
 async def update_research_status(
         research_id: str,
         status_update: ResearchStatusUpdateByIdSchema,
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        principal: Principal = Depends(get_principal),
 ):
+    # Вызывается math-воркером (внутренний токен) либо владельцем исследования.
     # Поддержка как полного UUID, так и короткого ID (префикса)
     try:
         research_uuid = uuid.UUID(research_id)
@@ -306,18 +410,26 @@ async def update_research_status(
         research = await crud_research.get_research_by_short_id(db, short_id=research_id)
     if not research:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research not found")
+    _enforce_owner_unless_internal(principal, research)
 
     status_obj = await crud_status.get_status_by_id(db, status_id=status_update.status_id)
     if not status_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Status with ID '{status_update.status_id}' not found.")
 
-    return await crud_research.update_research_status(db, research=research, status=status_obj)
+    try:
+        return await crud_research.update_research_status(db, research=research, status=status_obj)
+    except InvalidStatusTransition as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.delete("/{research_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_research(research_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def delete_research(
+        research_id: uuid.UUID,
+        db: AsyncSession = Depends(get_db),
+        current_user: UserModel = Depends(get_current_user),
+):
     """
-    Удаляет проект по его ID.
+    Удаляет проект по его ID. Доступно только владельцу.
 
     Входные данные:
     - **research_id**: UUID проекта из пути URL.
@@ -328,6 +440,7 @@ async def delete_research(research_id: uuid.UUID, db: AsyncSession = Depends(get
     research = await crud_research.get_research(db, research_id=research_id)
     if not research:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research not found")
+    _require_research_owner(research, current_user)
 
     await crud_research.delete_research(db, research=research)
 

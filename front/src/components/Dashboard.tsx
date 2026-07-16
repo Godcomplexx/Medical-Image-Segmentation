@@ -53,7 +53,7 @@ import {
     createResearch,
     startProcessing,
     deleteResearch,
-    getDownloadUrl,
+    downloadProcessedFile,
     addClassesAreas,
     getResearchById,
     deletePatient
@@ -693,16 +693,16 @@ export function Dashboard({ user, onLogout, isDark, onThemeToggle }: DashboardPr
           <DialogContent className={`backdrop-blur-xl border-none shadow-2xl ${isDark ? 'bg-slate-900/80 text-slate-200' : 'bg-white/80 text-slate-800'}`}>
               <DialogTitle>Скачать файлы для: {downloadDialog.research?.name}</DialogTitle>
               <div className="grid grid-cols-2 gap-4 pt-4">
-                  <GlassButton variant="secondary" onClick={() => window.open(getDownloadUrl(downloadDialog.research!.id, 't1'))}>
+                  <GlassButton variant="secondary" onClick={() => downloadProcessedFile(downloadDialog.research!.id, 't1').catch((e) => toast.error(e.message))}>
                       <FileText className="w-4 h-4 mr-2" /> T1
                   </GlassButton>
-                  <GlassButton variant="secondary" onClick={() => window.open(getDownloadUrl(downloadDialog.research!.id, 't2'))}>
+                  <GlassButton variant="secondary" onClick={() => downloadProcessedFile(downloadDialog.research!.id, 't2').catch((e) => toast.error(e.message))}>
                       <FileText className="w-4 h-4 mr-2" /> T2
                   </GlassButton>
-                  <GlassButton variant="secondary" onClick={() => window.open(getDownloadUrl(downloadDialog.research!.id, 'prediction'))}>
+                  <GlassButton variant="secondary" onClick={() => downloadProcessedFile(downloadDialog.research!.id, 'prediction').catch((e) => toast.error(e.message))}>
                       <FileText className="w-4 h-4 mr-2" /> Prediction
                   </GlassButton>
-                  <GlassButton variant="secondary" onClick={() => window.open(getDownloadUrl(downloadDialog.research!.id, 'parcellation'))}>
+                  <GlassButton variant="secondary" onClick={() => downloadProcessedFile(downloadDialog.research!.id, 'parcellation').catch((e) => toast.error(e.message))}>
                       <FileText className="w-4 h-4 mr-2" /> Parcellation
                   </GlassButton>
               </div>

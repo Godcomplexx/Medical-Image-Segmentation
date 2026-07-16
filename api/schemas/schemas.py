@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, field_serializer
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 from typing import Optional, List, Dict
 from uuid import UUID
 
@@ -21,9 +21,16 @@ class ClassesAreaCreateSchema(BaseModel):
     area: Dict[str, float]
 
 
+# Входная схема (регистрация/логин): принимает пароль, но НИКОГДА не используется как response_model.
 class UserSchema(BaseModel):
     email: EmailStr
     password: str
+
+
+# Ответ на успешный логин: JWT-токен доступа.
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 class PatientSchema(BaseModel):
@@ -48,71 +55,72 @@ class ResearchSchema(BaseModel):
         return dt.replace(microsecond=0).isoformat(sep=' ')
 
 class ResearchCreateSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     user_email: EmailStr
     patient_id: UUID
     status_id:  Optional[UUID] = None
     name: Optional[str] = None
     upload_date: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
 class ResearchStatusUpdateByIdSchema(BaseModel):
     status_id: UUID
 
 
-class Localization(LocalizationSchema):
-    zone_id: UUID
+class ResearchFailSchema(BaseModel):
+    error_message: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+
+class Localization(LocalizationSchema):
+    model_config = ConfigDict(from_attributes=True)
+
+    zone_id: UUID
 
 
 class Classification(ClassificationSchema):
-    classification_id: UUID
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
+    classification_id: UUID
 
 
 class ClassesArea(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     area: float
     localization: Localization
     classification: Classification
-    class Config:
-        from_attributes = True
 
 
-class User(UserSchema):
+# Выходная схема: НЕ наследует UserSchema, поэтому пароль (хеш) никогда не попадает в ответы API.
+class User(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
-
-    class Config:
-        from_attributes = True
+    email: EmailStr
 
 
 class Patient(PatientSchema):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     code: str
 
-    class Config:
-        from_attributes = True
-
 
 class Status(StatusSchema):
-    id: UUID
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
+    id: UUID
 
 
 class Research(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name:str
     upload_date: Optional[datetime] = None
+    error_message: Optional[str] = None
     user: User
     patient: Patient
-    classes_areas: List[ClassesArea] = []
+    classes_areas: List[ClassesArea] = Field(default_factory=list)
     status: Status
-
-    class Config:
-        from_attributes = True

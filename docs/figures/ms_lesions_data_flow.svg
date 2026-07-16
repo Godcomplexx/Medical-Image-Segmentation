@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <style>
+    text { font-family: Arial, Helvetica, sans-serif; fill: #1A1A1A; }
+    .title { font-size: 34px; font-weight: 700; text-anchor: middle; }
+    .label { font-size: 22px; font-weight: 700; text-anchor: middle; }
+    .small { font-size: 18px; text-anchor: middle; }
+    .note { font-size: 20px; }
+    .box, .train, .val, .out { fill: #FFFFFF; stroke: #4D4D4D; stroke-width: 2.5; rx: 10; }
+    .train { fill: #F2F2F2; }
+    .val { fill: #FFFFFF; }
+    .out { fill: #E6E6E6; }
+    .arrow { fill: none; stroke: #4D4D4D; stroke-width: 3; marker-end: url(#arrow); }
+    .dash { fill: none; stroke: #777777; stroke-width: 2.5; stroke-dasharray: 9 7; marker-end: url(#arrowGold); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 Z" fill="#4D4D4D"/></marker>
+    <marker id="arrowGold" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 Z" fill="#777777"/></marker>
+  </defs>
+  <rect x="605" y="105" width="390" height="110" class="box"/>
+  <text x="800" y="150" style="font-size:20px;font-weight:700;text-anchor:middle">202 исходных DICOM-исследования</text>
+  <text x="800" y="184" class="small">FLAIR/T2; study-level split</text>
+  <path d="M800 215 V275 H375 V320" class="arrow"/>
+  <path d="M800 215 V275 H1225 V320" class="arrow"/>
+  <rect x="115" y="320" width="520" height="145" class="train"/>
+  <text x="375" y="355" class="label">Обучение</text>
+  <text x="375" y="382" class="label">161 исследование</text>
+  <text x="375" y="398" class="small">GT-разметка очагов I/P/S/U</text>
+  <text x="375" y="428" class="small">__repeat_N — только аугментационные копии train</text>
+  <rect x="965" y="320" width="520" height="145" class="val"/>
+  <text x="1225" y="355" class="label">Независимая валидация</text>
+  <text x="1225" y="382" class="label">41 исследование</text>
+  <text x="1225" y="410" class="small">study-level split</text>
+  <text x="1225" y="434" class="small">без псевдометок и train-копий</text>
+  <path d="M375 465 V525" class="dash"/>
+  <rect x="115" y="525" width="520" height="145" class="train"/>
+  <text x="375" y="568" class="label">Согласование U/S</text>
+  <text x="375" y="600" class="small">U, если ≥50% площади очага в коре;</text>
+  <text x="375" y="628" class="small">иначе S; I/P сохраняются</text>
+  <path d="M1225 465 V525" class="arrow"/>
+  <rect x="965" y="525" width="520" height="145" class="val"/>
+  <text x="1225" y="568" class="label">Неизменяемый GT для оценки</text>
+  <text x="1225" y="600" class="small">та же детерминированная переразметка U/S</text>
+  <text x="1225" y="628" class="small">без передачи информации из validation в train</text>
+  <path d="M375 670 V730" class="dash"/>
+  <rect x="115" y="730" width="520" height="145" class="train"/>
+  <text x="375" y="770" class="label">Дистилляция разметки</text>
+  <text x="375" y="802" class="small">LST-AI на 159 из 161 train</text>
+  <text x="375" y="830" class="small">≈8 500 → ≈16 000 очагов; 2 исключены без T1</text>
+  <path d="M635 802 H965" class="dash"/>
+  <rect x="965" y="730" width="520" height="145" class="out"/>
+  <text x="1225" y="760" class="label">Итоговая модель</text>
+  <text x="1225" y="787" class="label">и её оценка</text>
+  <text x="1225" y="815" class="small">2.5D U-Net + классификатор</text>
+  <text x="1225" y="840" class="small">метрики на 41 val</text>
+</svg>
