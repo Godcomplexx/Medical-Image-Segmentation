@@ -98,22 +98,36 @@ README = """КАК ОТКРЫТЬ И ПРОВЕРИТЬ РАЗМЕТКУ В 3D S
 
 
 # ----------------------------- сбор исследований -----------------------------
+_NON_DICOM_EXT = {
+    ".json", ".mrk", ".nii", ".gz", ".txt", ".csv",
+    ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".xml", ".log",
+}
+
+
 def looks_like_dicom_study(folder: Path) -> bool:
-    """Папка считается DICOM-исследованием, если содержит DICOM-файлы."""
+    """Папка считается DICOM-исследованием, если содержит DICOM-файлы.
+
+    Заведомо не-DICOM файлы (разметка Markups .json/.mrk, NIfTI, картинки)
+    пропускаются, чтобы они не «съедали» бюджет проверки — иначе исследования
+    с большим числом файлов разметки перед DICOM ошибочно считались не-DICOM.
+    """
     if (folder / "DICOM").is_dir():
         return True
     if not HAVE_DICOM:
         return False
     checked = 0
     for f in folder.rglob("*"):
-        if f.is_file():
-            try:
-                pydicom.dcmread(str(f), stop_before_pixels=True)
-                return True
-            except Exception:
-                checked += 1
-                if checked >= 12:
-                    break
+        if not f.is_file():
+            continue
+        if f.suffix.lower() in _NON_DICOM_EXT:
+            continue
+        try:
+            pydicom.dcmread(str(f), stop_before_pixels=True)
+            return True
+        except Exception:
+            checked += 1
+            if checked >= 2000:
+                break
     return False
 
 
@@ -181,11 +195,13 @@ def gather_studies(indir: Path, work: Path, allowed=None):
         dicom_dirs = [d for d in dicom_dirs if d.name in allowed]
     if dicom_dirs:
         print(f"[i] Режим DICOM: к обработке исследований — {len(dicom_dirs)}")
-        for d in dicom_dirs:
+        for idx, d in enumerate(dicom_dirs):
             print(f"    конвертация FLAIR: {d.name}")
-            conv = work / re.sub(r'[^0-9A-Za-z]+', '_', d.name)[:40]
+            # Префикс с индексом гарантирует уникальный каталог даже при совпадении
+            # первых символов длинных имён (иначе повторная конвертация затирала FLAIR соседа).
+            conv = work / f"{idx:04d}_{re.sub(r'[^0-9A-Za-z]+', '_', d.name)[:36]}"
             flair = convert_dicom_study(d, conv)
-            if flair is not None:
+            if flair is not None and Path(flair).exists():
                 studies.append((d.name, flair))
             else:
                 print(f"    [пропуск] FLAIR не извлечён: {d.name}")
@@ -286,10 +302,17 @@ def main():
     stage_out = Path(tempfile.mkdtemp(prefix="nnraw_out_"))
     id_map, manifest = {}, []
     for i, (sid, flair) in enumerate(studies):
+        if flair is None or not Path(flair).exists():
+            print(f"    [пропуск] FLAIR отсутствует, исследование не размечается: {sid}")
+            continue
         cid = ascii_id(sid, i)
         shutil.copy2(flair, stage_in / f"{cid}_0000.nii.gz")
         id_map[cid] = (sid, flair)
         manifest.append((cid, sid, str(flair)))
+    if not id_map:
+        print("[!] Ни одного FLAIR не удалось подготовить — размечать нечего.")
+        shutil.rmtree(conv_root, ignore_errors=True)
+        return 1
     (outdir / "manifest.csv").write_text(
         "case_id,study,source_flair\n" +
         "\n".join(f'{c},"{s}","{f}"' for c, s, f in manifest), encoding="utf-8")

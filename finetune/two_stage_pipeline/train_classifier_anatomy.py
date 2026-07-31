@@ -23,6 +23,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 from PIL import Image
 from sklearn.ensemble import HistGradientBoostingClassifier
@@ -38,12 +39,38 @@ from .anatomy import (
 )
 from .data import MEDICAL_CLASSES, annotation_box, parse_yolo_segmentation
 from .synthseg_anatomy import (
+    CEREBRAL_CORTEX_IDS,
     brain_z_extent,
     lesion_features_from_seg,
     z_norm_from_extent,
 )
 
 CLASS_ORDER = list(MEDICAL_CLASSES.values())  # I, P, S, U
+
+
+def _cortex_relabel(orig_class: str, points, seg2d: np.ndarray) -> str:
+    """Doctor's confirmed U rule: a lesion with >=50% of its area inside the
+    cortical ribbon is juxtacortical (U); otherwise it stays subcortical (S).
+
+    Only reassigns among {S, U}. Infratentorial (I, cerebellum/brainstem) and
+    periventricular (P, ventricle contact) are defined by other structures and are
+    left untouched. Fixes the annotator bias where cortex-touching lesions were
+    labeled S, which capped both U and S. Uses the real SynthSeg cortex mask.
+    """
+    if orig_class in ("I", "P"):
+        return orig_class
+    height, width = seg2d.shape[:2]
+    pts = np.array([[p[0] * width, p[1] * height] for p in points], np.int32)
+    if len(pts) < 3:
+        return orig_class
+    lesion = np.zeros((height, width), np.uint8)
+    cv2.fillPoly(lesion, [pts], 1)
+    area = int(lesion.sum())
+    if area == 0:
+        return orig_class
+    cortex = np.isin(seg2d, list(CEREBRAL_CORTEX_IDS))
+    fraction = float((lesion.astype(bool) & cortex).sum()) / area
+    return "U" if fraction >= 0.5 else "S"
 
 
 def _read_manifest(manifest_path: Path) -> list[dict[str, str]]:
@@ -83,6 +110,7 @@ def build_features(
     z_lookup: dict[str, float],
     *,
     synthseg_dir: Path | None = None,
+    cortex_relabel: bool = False,
 ) -> tuple[np.ndarray, list[str], list[dict[str, Any]]]:
     """
     Compute features for every ground-truth lesion row, caching per slice/study.
@@ -130,15 +158,23 @@ def build_features(
             context = build_slice_context(gray)
 
         for row in image_rows:
-            box = annotation_box(annotations[int(row["object_index"])], width, height)
+            annotation = annotations[int(row["object_index"])]
+            box = annotation_box(annotation, width, height)
+            label = row["class_name"]
             if synthseg_dir is not None:
                 features = lesion_features_from_seg(
                     seg_volume, z_index, box, z_norm=z_norm
                 )
+                # Doctor's cortex rule (needs the real cortex mask): reassign the
+                # S/U boundary by the lesion's cortical overlap.
+                if cortex_relabel:
+                    label = _cortex_relabel(
+                        label, annotation.points, seg_volume[:, :, z_index]
+                    )
             else:
                 features = features_from_context(context, box, z_norm=z_norm)
             vectors.append(features.vector())
-            labels.append(row["class_name"])
+            labels.append(label)
             meta.append({"source_image": source_image, "features": features})
     return np.asarray(vectors, dtype=np.float64), labels, meta
 
@@ -193,15 +229,28 @@ def main() -> None:
         help="Directory of aligned SynthSeg segmentations ({study}.nii.gz). When "
         "given, features use real ventricle/cortex masks instead of the FLAIR proxy.",
     )
+    parser.add_argument(
+        "--cortex-relabel",
+        action="store_true",
+        help="Apply the doctor's >=50%%-of-lesion-in-cortex -> U rule using the "
+        "SynthSeg cortex mask (reassigns the S/U boundary). Requires --synthseg-dir.",
+    )
     args = parser.parse_args()
+
+    if args.cortex_relabel and args.synthseg_dir is None:
+        parser.error("--cortex-relabel requires --synthseg-dir (needs the cortex mask).")
 
     rows = _read_manifest(args.manifest)
     z_lookup = _z_norm_lookup(rows)
     train_rows = [r for r in rows if r["split"] == "train"]
     val_rows = [r for r in rows if r["split"] == "val"]
 
-    x_train, y_train, _ = build_features(train_rows, z_lookup, synthseg_dir=args.synthseg_dir)
-    x_val, y_val, _ = build_features(val_rows, z_lookup, synthseg_dir=args.synthseg_dir)
+    x_train, y_train, _ = build_features(
+        train_rows, z_lookup, synthseg_dir=args.synthseg_dir, cortex_relabel=args.cortex_relabel
+    )
+    x_val, y_val, _ = build_features(
+        val_rows, z_lookup, synthseg_dir=args.synthseg_dir, cortex_relabel=args.cortex_relabel
+    )
     print(f"train lesions: {len(y_train)}  val lesions: {len(y_val)}")
 
     model = HistGradientBoostingClassifier(
@@ -225,6 +274,7 @@ def main() -> None:
     metrics = {
         "manifest": str(args.manifest),
         "feature_source": "synthseg" if args.synthseg_dir else "flair_proxy",
+        "cortex_relabel": bool(args.cortex_relabel),
         "features": list(FEATURE_NAMES),
         "counts": {"train": len(y_train), "val": len(y_val)},
         "learned_model": _per_class_metrics(y_val, pred_model),

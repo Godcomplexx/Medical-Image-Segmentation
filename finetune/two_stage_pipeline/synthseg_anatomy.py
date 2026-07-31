@@ -156,7 +156,7 @@ def lesion_features_from_seg(
     seg2d = np.asarray(seg_volume[:, :, z])
     masks = structure_masks(seg2d)
     context = slice_context_from_masks(
-        masks["brain"], masks["cortex"], masks["ventricles"]
+        masks["brain"], masks["cortex"], masks["ventricles"], masks["infratentorial"]
     )
     return features_from_context(context, lesion_box, z_norm=z_norm)
 

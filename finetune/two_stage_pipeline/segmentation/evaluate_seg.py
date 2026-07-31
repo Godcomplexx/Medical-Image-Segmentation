@@ -18,9 +18,11 @@ from pathlib import Path
 
 from PIL import Image
 
+from ..anatomy import parse_study_slice
 from ..data import MEDICAL_CLASSES, annotation_box, parse_yolo_segmentation
 from ..evaluate import _match_image
 from ..predict import AnatomyClassifier, classify_boxes
+from ..train_classifier_anatomy import _cortex_relabel, _load_segmentation
 from .fp_filter import FalsePositiveFilter
 from .predict_seg import LesionSegmenter
 
@@ -44,6 +46,8 @@ def evaluate_seg(
     fp_threshold: float = 0.5,
     device: str = "cuda:0",
     encoder: str | None = None,
+    cortex_relabel: bool = False,
+    min_gt_area: float = 0.0,
 ) -> dict:
     segmenter = LesionSegmenter(
         seg_weights, imgsz=imgsz, threshold=threshold, min_area=min_area,
@@ -52,6 +56,10 @@ def evaluate_seg(
     classifier = AnatomyClassifier(anatomy_model)
     fp_filter = FalsePositiveFilter(fp_filter_path) if fp_filter_path else None
     seg_cache: dict = {}
+    # Cache of full SynthSeg volumes for GT cortex-relabel (keeps GT consistent with
+    # a classifier trained with --cortex-relabel; otherwise U/S predictions on
+    # cortex-touching lesions would score as errors against un-relabeled GT).
+    relabel_seg_cache: dict[str, object] = {}
     totals = {name: {"tp": 0, "fp": 0, "fn": 0} for name in CLASS_ORDER}
     images = accepted = 0
 
@@ -61,10 +69,30 @@ def evaluate_seg(
             continue
         with Image.open(image_path) as image:
             width, height = image.width, image.height
+        annotations = parse_yolo_segmentation(label_path)
         truth = [
             (MEDICAL_CLASSES[a.class_id], annotation_box(a, width, height))
-            for a in parse_yolo_segmentation(label_path)
+            for a in annotations
         ]
+        if cortex_relabel:
+            study, z = parse_study_slice(label_path.stem)
+            if study not in relabel_seg_cache:
+                relabel_seg_cache[study] = _load_segmentation(synthseg_dir, study)
+            seg_volume = relabel_seg_cache[study]
+            if seg_volume is not None and 0 <= z < seg_volume.shape[2]:
+                seg2d = seg_volume[:, :, z]
+                truth = [
+                    (_cortex_relabel(cls, a.points, seg2d), box)
+                    for (cls, box), a in zip(truth, annotations)
+                ]
+        # Analyse only lesions >= min_gt_area px (docs convention: >=100 px, where
+        # limited spatial resolution matters less for mask overlap).
+        if min_gt_area > 0:
+            truth = [
+                (cls, box)
+                for cls, box in truth
+                if (box[2] - box[0]) * (box[3] - box[1]) >= min_gt_area
+            ]
         candidates = [
             c
             for c in segmenter.boxes(image_path, fp_filter=fp_filter, fp_threshold=fp_threshold)
@@ -128,6 +156,17 @@ def main() -> None:
     parser.add_argument("--fp-threshold", type=float, default=0.5)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--encoder", default=None, help="smp encoder name (e.g. resnet34) matching the trained weights.")
+    parser.add_argument(
+        "--cortex-relabel",
+        action="store_true",
+        help="Relabel GT with the >=50%%-in-cortex -> U rule (match a classifier trained with --cortex-relabel).",
+    )
+    parser.add_argument(
+        "--min-gt-area",
+        type=float,
+        default=0.0,
+        help="Analyse only GT lesions with box area >= this many px (docs uses 100).",
+    )
     args = parser.parse_args()
 
     metrics = evaluate_seg(
@@ -136,6 +175,7 @@ def main() -> None:
         seg_confidence=args.seg_confidence, match_iou=args.match_iou,
         centroid_match=args.centroid_match, fp_filter_path=args.fp_filter,
         fp_threshold=args.fp_threshold, device=args.device, encoder=args.encoder,
+        cortex_relabel=args.cortex_relabel, min_gt_area=args.min_gt_area,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -30,8 +30,15 @@ def imread_rgb(path: Path) -> np.ndarray:
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 
-def rasterize_polygons(label_path: Path, width: int, height: int) -> np.ndarray:
-    """Fill every YOLO polygon (any class id) into a {0,1} mask of shape (H, W)."""
+def rasterize_polygons(
+    label_path: Path, width: int, height: int, *, min_box_area: float = 0.0
+) -> np.ndarray:
+    """Fill every YOLO polygon (any class id) into a {0,1} mask of shape (H, W).
+
+    ``min_box_area`` drops lesions whose bounding-box area (native px) is below the
+    threshold, so the detector can be trained on the same >=100 px size regime it is
+    evaluated on (tiny sub-threshold lesions become background instead of positives).
+    """
     mask = np.zeros((height, width), dtype=np.uint8)
     if not label_path.is_file():
         return mask
@@ -47,8 +54,15 @@ def rasterize_polygons(label_path: Path, width: int, height: int) -> np.ndarray:
             ],
             dtype=np.int32,
         )
-        if len(points) >= 3:
-            cv2.fillPoly(mask, [points], 1)
+        if len(points) < 3:
+            continue
+        if min_box_area > 0:
+            box_area = (points[:, 0].max() - points[:, 0].min()) * (
+                points[:, 1].max() - points[:, 1].min()
+            )
+            if box_area < min_box_area:
+                continue
+        cv2.fillPoly(mask, [points], 1)
     return mask
 
 
@@ -62,10 +76,12 @@ class LesionSegDataset(Dataset):
         augment: bool = False,
         background_ratio: Optional[float] = None,
         seed: int = 42,
+        min_box_area: float = 0.0,
     ):
         self.labels_dir = labels_dir
         self.imgsz = imgsz
         self.augment = augment
+        self.min_box_area = min_box_area
         all_images = sorted(
             p for p in images_dir.iterdir() if p.suffix.casefold() in IMAGE_EXTENSIONS
         )
@@ -92,7 +108,10 @@ class LesionSegDataset(Dataset):
         image_path = self.images[index]
         image = imread_rgb(image_path)
         height, width = image.shape[:2]
-        mask = rasterize_polygons(self.labels_dir / f"{image_path.stem}.txt", width, height)
+        mask = rasterize_polygons(
+            self.labels_dir / f"{image_path.stem}.txt", width, height,
+            min_box_area=self.min_box_area,
+        )
 
         image = cv2.resize(image, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
         mask = cv2.resize(mask, (self.imgsz, self.imgsz), interpolation=cv2.INTER_NEAREST)

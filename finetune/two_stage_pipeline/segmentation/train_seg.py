@@ -70,9 +70,11 @@ def train(args: argparse.Namespace) -> None:
     train_ds = LesionSegDataset(
         root / "images" / "train", train_labels,
         imgsz=args.imgsz, augment=True, background_ratio=args.background_ratio,
+        min_box_area=args.min_box_area,
     )
     val_ds = LesionSegDataset(
-        root / "images" / "val", root / "labels" / "val", imgsz=args.imgsz, augment=False
+        root / "images" / "val", root / "labels" / "val", imgsz=args.imgsz, augment=False,
+        min_box_area=args.min_box_area,
     )
     train_dl = DataLoader(
         train_ds, batch_size=args.batch, shuffle=True, num_workers=args.workers,
@@ -104,11 +106,33 @@ def train(args: argparse.Namespace) -> None:
     out = args.output
     (out / "weights").mkdir(parents=True, exist_ok=True)
     results_path = out / "results.csv"
-    with results_path.open("w", newline="", encoding="utf-8") as stream:
-        csv.writer(stream).writerow(["epoch", "seconds", "train_loss", "val_dice", "val_lesion_recall"])
+    ckpt_path = out / "weights" / "ckpt.pt"
 
+    start_epoch = 1
     best_score = -1.0
-    for epoch in range(1, args.epochs + 1):
+    # Warm-start model weights from a prior run (e.g. its last.pt / best.pt).
+    if args.init_weights and args.init_weights.is_file():
+        model.load_state_dict(torch.load(args.init_weights, map_location=device))
+        print(f"warm-started model weights from {args.init_weights}")
+    # Full resume: model + optimizer + scheduler + epoch, so a killed run continues
+    # from where it stopped instead of restarting from scratch.
+    if args.resume and ckpt_path.is_file():
+        ckpt = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(ckpt["model"])
+        optimizer.load_state_dict(ckpt["optimizer"])
+        scheduler.load_state_dict(ckpt["scheduler"])
+        scaler.load_state_dict(ckpt["scaler"])
+        start_epoch = ckpt["epoch"] + 1
+        best_score = ckpt["best_score"]
+        print(f"resumed from {ckpt_path}: continue at epoch {start_epoch} (best_score {best_score:.4f})")
+
+    # Only truncate the log for a fresh run; keep it when resuming/continuing.
+    resuming = (args.resume and ckpt_path.is_file()) or bool(args.init_weights)
+    if not (results_path.is_file() and resuming):
+        with results_path.open("w", newline="", encoding="utf-8") as stream:
+            csv.writer(stream).writerow(["epoch", "seconds", "train_loss", "val_dice", "val_lesion_recall"])
+
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         start = time.time()
         running = 0.0
@@ -146,6 +170,18 @@ def train(args: argparse.Namespace) -> None:
         if score > best_score:
             best_score = score
             torch.save(model.state_dict(), out / "weights" / "best.pt")
+        # Full checkpoint every epoch so an interrupted run resumes with --resume.
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "scaler": scaler.state_dict(),
+                "epoch": epoch,
+                "best_score": best_score,
+            },
+            ckpt_path,
+        )
     print(f"best val dice+recall: {best_score:.4f}")
 
 
@@ -185,6 +221,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Cap VRAM usage to this fraction (e.g. 0.55) to keep the GPU free for other work.",
     )
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from weights/ckpt.pt (model+optimizer+scheduler+epoch).",
+    )
+    parser.add_argument(
+        "--init-weights",
+        type=Path,
+        default=None,
+        help="Warm-start model weights from this file (e.g. a prior last.pt) before training.",
+    )
+    parser.add_argument(
+        "--min-box-area",
+        type=float,
+        default=0.0,
+        help="Drop GT lesions with box area < this (native px) from train+val masks, "
+        "so the detector is trained on the same >=100 px regime it is evaluated on.",
+    )
     return parser
 
 

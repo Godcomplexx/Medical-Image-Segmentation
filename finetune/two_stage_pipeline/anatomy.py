@@ -58,6 +58,13 @@ FEATURE_NAMES: tuple[str, ...] = (
     # (min≈0) from subcortical (min>0), mirroring LST-AI's dilated-contact rule.
     "cortex_contact_norm",
     "ventricle_contact_norm",
+    # Infratentorial contact (doctor's ГЛАВНАЯ ПРАВКА for class I): minimum distance
+    # from the lesion box to the cerebellum/brainstem mask, normalized. ~0 when the
+    # lesion sits in the infratentorial compartment → I, defined by real anatomy
+    # instead of the z_norm proxy (a low temporal/occipital lobe lesion is also on a
+    # low slice but is supratentorial). NaN when no structure mask is available
+    # (FLAIR-proxy path), so the model's imputation keeps working.
+    "infra_contact_norm",
 )
 
 _SLICE_RE = re.compile(r"^slice_(\d+)_(.+)$")
@@ -74,6 +81,7 @@ class LesionFeatures:
     centroid_y_norm: float
     cortex_contact_norm: float = float("nan")
     ventricle_contact_norm: float = float("nan")
+    infra_contact_norm: float = float("nan")
 
     def vector(self) -> list[float]:
         return [getattr(self, name) for name in FEATURE_NAMES]
@@ -182,6 +190,9 @@ class SliceContext:
     brain_radius: float
     edge_distance: np.ndarray | None
     ventricle_distance: np.ndarray | None
+    # Distance transform to the infratentorial (cerebellum + brainstem) mask; only
+    # available from real structure masks (SynthSeg). None on the FLAIR-proxy path.
+    infra_distance: np.ndarray | None = None
 
 
 def build_slice_context(gray: np.ndarray) -> SliceContext:
@@ -222,6 +233,7 @@ def slice_context_from_masks(
     brain: np.ndarray,
     cortex: np.ndarray,
     ventricles: np.ndarray,
+    infratentorial: np.ndarray | None = None,
 ) -> SliceContext:
     """
     Build a :class:`SliceContext` from real structure masks (e.g. SynthSeg).
@@ -258,6 +270,11 @@ def slice_context_from_masks(
         if ventricles.sum() > 0
         else None
     )
+    infra_distance = None
+    if infratentorial is not None:
+        infra = (infratentorial > 0).astype(np.uint8)
+        if infra.sum() > 0:
+            infra_distance = cv2.distanceTransform((infra == 0).astype(np.uint8), cv2.DIST_L2, 5)
     return SliceContext(
         height=height,
         width=width,
@@ -266,6 +283,7 @@ def slice_context_from_masks(
         brain_radius=math.sqrt(brain.sum() / math.pi) + 1e-6,
         edge_distance=cortex_distance,
         ventricle_distance=ventricle_distance,
+        infra_distance=infra_distance,
     )
 
 
@@ -311,6 +329,7 @@ def features_from_context(
     vent_norm = (vent_dist / context.brain_radius) if vent_dist is not None else float("nan")
     cortex_contact = _sample_box_min(context.edge_distance, lesion_box)
     vent_contact = _sample_box_min(context.ventricle_distance, lesion_box)
+    infra_contact = _sample_box_min(context.infra_distance, lesion_box)
     lesion_area = max(0.0, (x2 - x1)) * max(0.0, (y2 - y1))
     return LesionFeatures(
         z_norm=float(np.clip(z_norm, 0.0, 1.0)),
@@ -328,6 +347,11 @@ def features_from_context(
         ventricle_contact_norm=(
             float(min(vent_contact / context.brain_radius, 2.0))
             if vent_contact is not None
+            else float("nan")
+        ),
+        infra_contact_norm=(
+            float(min(infra_contact / context.brain_radius, 2.0))
+            if infra_contact is not None
             else float("nan")
         ),
     )
