@@ -92,3 +92,6 @@ SKILL (1).md
 
 # Временные папки тестов
 finetune/.test_tmp/
+
+# Временные lock-файлы Word/Excel
+~$*
