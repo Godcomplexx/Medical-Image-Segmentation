@@ -270,6 +270,8 @@ def main():
     ap.add_argument("--no-classify", action="store_true",
                     help="не присваивать класс кандидатам 2.5D (оставлять «?»)")
     ap.add_argument("--detector-weights", default=None)
+    ap.add_argument("--detector-imgsz", type=int, default=896,
+                    help="разрешение входа 2.5D-детектора; должно совпадать с обучением")
     args = ap.parse_args()
 
     indir, outdir = Path(args.input), Path(args.output)
@@ -306,7 +308,24 @@ def main():
             print(f"    [пропуск] FLAIR отсутствует, исследование не размечается: {sid}")
             continue
         cid = ascii_id(sid, i)
-        shutil.copy2(flair, stage_in / f"{cid}_0000.nii.gz")
+        # nnU-Net ждёт РОВНО одну модальность: на 4-мерном объёме его препроцессор
+        # падает (normalization_schemes[c] -> IndexError), воркеры умирают и вместе
+        # с ними теряется ВЕСЬ пакет. Поэтому проверяем форму до запуска.
+        staged = stage_in / f"{cid}_0000.nii.gz"
+        try:
+            img4 = nib.load(str(flair))
+            if len(img4.shape) > 3:
+                extra = [d for d in img4.shape[3:] if d > 1]
+                if extra:
+                    print(f"    [пропуск] объём {img4.shape} — не одна модальность: {sid}")
+                    continue
+                arr3 = np.asarray(img4.dataobj).reshape(img4.shape[:3])
+                nib.save(nib.Nifti1Image(arr3, img4.affine, img4.header), str(staged))
+            else:
+                shutil.copy2(flair, staged)
+        except Exception as e:  # noqa: BLE001
+            print(f"    [пропуск] не читается FLAIR ({e}): {sid}")
+            continue
         id_map[cid] = (sid, flair)
         manifest.append((cid, sid, str(flair)))
     if not id_map:
@@ -330,10 +349,15 @@ def main():
     if not args.no_detector:
         try:
             from detector_2p5d import Detector2p5d, DEFAULT_WEIGHTS
-            w = args.detector_weights or DEFAULT_WEIGHTS
+            # запасной путь: прогон, на котором детектор обучен сейчас (full896)
+            fallback = (REPO / "finetune" / "fileStorage" / "two_stage_full" /
+                        "seg_runs" / "unet_2p5d_full896" / "weights" / "best.pt")
+            w = args.detector_weights or (DEFAULT_WEIGHTS if Path(DEFAULT_WEIGHTS).is_file()
+                                          else fallback)
             if Path(w).is_file():
-                print("[i] Загрузка 2.5D-детектора (дополнение находок)...")
-                detector = Detector2p5d(weights=w)
+                print(f"[i] Загрузка 2.5D-детектора (дополнение находок): "
+                      f"{Path(w).parent.parent.name}, imgsz={args.detector_imgsz}")
+                detector = Detector2p5d(weights=w, imgsz=args.detector_imgsz)
             else:
                 print("[i] 2.5D-детектор пропущен (нет весов).")
         except Exception as e:

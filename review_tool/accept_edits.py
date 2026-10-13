@@ -26,10 +26,23 @@ CAND = 5
 
 
 def find_pairs(indir: Path):
-    """Находит пары (study, flair_path, seg_path)."""
+    """Находит пары (study, flair_path, seg_path).
+
+    Врач правит в Slicer .seg.nrrd, поэтому при наличии обоих файлов берём
+    именно его — .nii.gz остаётся неисправленным черновиком.
+    """
+    by_stem = {}
+    for pattern, suffix, prio in (("*_seg.nii.gz", "_seg.nii.gz", 0),
+                                  ("*_seg.seg.nrrd", "_seg.seg.nrrd", 1),
+                                  ("*_seg.nrrd", "_seg.nrrd", 1)):
+        for seg in sorted(indir.rglob(pattern)):
+            stem = seg.name[: -len(suffix)]
+            prev = by_stem.get(stem)
+            if prev is None or prio > prev[0]:
+                by_stem[stem] = (prio, seg)
+
     pairs = []
-    for seg in sorted(indir.rglob("*_seg.nii.gz")):
-        stem = seg.name[:-len("_seg.nii.gz")]
+    for stem, (_prio, seg) in sorted(by_stem.items()):
         flair = seg.with_name(f"{stem}_FLAIR.nii.gz")
         if not flair.is_file():
             cand = list(seg.parent.glob("*_FLAIR.nii.gz"))
@@ -37,6 +50,62 @@ def find_pairs(indir: Path):
         if flair is not None:
             pairs.append((stem, flair, seg))
     return pairs
+
+
+def _class_of_segment(seg_id: str, name: str) -> int | None:
+    """Сегмент Slicer -> класс 1..4 по имени (I/P/S/U) или по исходному ID."""
+    letter = (name or "").strip()[:1].upper()
+    for value, cls_name in CLASS_NAMES.items():
+        if letter == cls_name:
+            return value
+    m = re.match(r"^Segment_(\d+)$", seg_id or "")
+    if m and int(m.group(1)) in CLASS_NAMES:
+        return int(m.group(1))
+    return None
+
+
+def load_seg(path: Path) -> np.ndarray:
+    """Разметка -> массив (H,W,Z) uint8 с классами 1..4.
+
+    Для Slicer .seg.nrrd классы берутся из имён сегментов, а не из значений
+    вокселей: после правки Slicer нумерует метки заново и может писать
+    сегменты в несколько слоёв (4D), если они перекрываются.
+    """
+    if not path.name.endswith(".nrrd"):
+        return np.asarray(nib.load(str(path)).get_fdata()).astype(np.uint8)
+
+    import shutil, tempfile
+    import SimpleITK as sitk
+    # ITK на Windows не открывает пути с кириллицей — читаем через копию
+    with tempfile.TemporaryDirectory() as tmp:
+        local = Path(tmp) / "segmentation.seg.nrrd"
+        shutil.copy(str(path), str(local))
+        img = sitk.ReadImage(str(local))
+        meta = {k: img.GetMetaData(k) for k in img.GetMetaDataKeys()}
+
+    arr = sitk.GetArrayFromImage(img)                  # (z,y,x) либо (layer,z,y,x)
+    arr = arr[np.newaxis] if arr.ndim == 3 else arr
+    arr = np.transpose(arr, (0, 3, 2, 1))              # -> (layer,H,W,Z)
+
+    out = np.zeros(arr.shape[1:], np.uint8)
+    found = False
+    for i in range(len(meta)):
+        seg_id = meta.get(f"Segment{i}_ID")
+        if seg_id is None:
+            break
+        cls = _class_of_segment(seg_id, meta.get(f"Segment{i}_Name", ""))
+        if cls is None:
+            print(f"    [!] сегмент '{meta.get(f'Segment{i}_Name', seg_id)}' "
+                  f"не опознан как I/P/S/U — пропущен")
+            continue
+        layer = int(meta.get(f"Segment{i}_Layer", 0))
+        value = int(meta.get(f"Segment{i}_LabelValue", 1))
+        if layer < arr.shape[0]:
+            out[arr[layer] == value] = cls
+            found = True
+    if not found:                                      # без метаданных — как есть
+        out = arr[0].astype(np.uint8)
+    return out
 
 
 def polygons_from_slice(mask2d, cls, min_area):
@@ -87,7 +156,7 @@ def main():
     total_les = 0
     for stem, flair, seg in pairs:
         F = normalize_mri_volume(nib.load(str(flair)).get_fdata())      # HWZ uint8
-        L = np.asarray(nib.load(str(seg)).get_fdata()).astype(np.uint8)  # HWZ 0..5
+        L = load_seg(seg)                                               # HWZ 0..5
         if F.shape != L.shape:
             print(f"    [пропуск] {stem}: размеры FLAIR и разметки не совпадают {F.shape} vs {L.shape}")
             continue
